@@ -248,7 +248,7 @@ env["LIBPATH"] = []
 if GetOption( "recstore" ) != None:
     env.Append( CPPDEFINES=[ "_RECSTORE" ] )
 env.Append( CPPDEFINES=[ "_SCONS" ] )
-env.Append( CPPPATH=[ "." ] )
+env.Append( CPPPATH=[ "." , "zookeeper" ] )
 
 
 
@@ -323,6 +323,7 @@ else:
 
 coreShardFiles = []
 shardServerFiles = coreShardFiles + Glob( "s/strategy*.cpp" ) + [ "s/commands_admin.cpp" , "s/commands_public.cpp" , "s/request.cpp" ,  "s/cursors.cpp" ,  "s/server.cpp" , "s/chunk.cpp" , "s/shardkey.cpp" , "s/config.cpp" ]
+shardServerFiles += Glob( "zookeeper/*.c" ) + Glob( "zookeeper/hashtable/*.c" )
 serverOnlyFiles += coreShardFiles + [ "s/d_logic.cpp" ]
 
 allClientFiles = commonFiles + coreDbFiles + [ "client/clientOnly.cpp" , "client/gridfs.cpp" , "s/d_util.cpp" ];
