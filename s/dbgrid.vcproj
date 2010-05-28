@@ -1005,11 +1005,15 @@
 				>
 			</File>
 			<File
-				RelativePath="..\util\thread_pool.cpp"
+				RelativePath="..\util\concurrency\thread_pool.cpp"
 				>
 			</File>
 			<File
 				RelativePath="..\util\util.cpp"
+				>
+			</File>
+			<File
+				RelativePath="..\util\concurrency\vars.cpp"
 				>
 			</File>
 		</Filter>
