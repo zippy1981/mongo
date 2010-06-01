@@ -52,7 +52,7 @@ namespace mongo {
             return _id;
         }
 
-        DBConfig * getConfig() const {
+        DBConfigPtr getConfig() const {
             return _config;
         }
         bool isShardingEnabled() const {
@@ -96,7 +96,7 @@ namespace mongo {
         AbstractMessagingPort* _p;
         
         MSGID _id;
-        DBConfig * _config;
+        DBConfigPtr _config;
         ChunkManagerPtr _chunkManager;
         
         int _clientId;
@@ -121,6 +121,7 @@ namespace mongo {
         void disconnect();
         
         static ClientInfo * get( int clientId = 0 , bool create = true );
+        static void disconnect( int clientId );
         
     private:
         int _id;

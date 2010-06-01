@@ -1,4 +1,4 @@
-// oplog.cpp
+// @file oplog.cpp
 
 /**
 *    Copyright (C) 2008 10gen Inc.
@@ -26,13 +26,23 @@ namespace mongo {
 
     int __findingStartInitialTimeout = 5; // configurable for testing    
 
-    // cached copies of these...so don't rename them
+    // cached copies of these...so don't rename them, drop them, etc.!!!
     NamespaceDetails *localOplogMainDetails = 0;
     Database *localOplogDB = 0;
 
     void oplogCheckCloseDatabase( Database * db ){
         localOplogDB = 0;
         localOplogMainDetails = 0;
+    }
+
+    static void _logOpUninitialized(const char *opstr, const char *ns, const char *logNS, const BSONObj& obj, BSONObj *o2, bool *bb ) {
+        log() << "replSet logop not done" << endl;
+        uassert(13288, "replSet error write op to db before replSet initialized", str::startsWith(ns, "local.") || *opstr == 'n');
+    }
+
+    static void _logOpRS(const char *opstr, const char *ns, const char *logNS, const BSONObj& obj, BSONObj *o2, bool *bb ) {
+        log() << "replSet logop not done" << endl;
+        //DEV assert( theReplSet );
     }
 
     /* we write to local.opload.$main:
@@ -45,15 +55,20 @@ namespace mongo {
         "c" db cmd
         "db" declares presence of a database (ns is set to the db name + '.')
         "n" no op
-       logNS - e.g. "local.oplog.$main"
+       logNS - where to log it.  0/null means "local.oplog.$main".
        bb:
          if not null, specifies a boolean to pass along to the other side as b: param.
          used for "justOne" or "upsert" flags on 'd', 'u'
        first: true
          when set, indicates this is the first thing we have logged for this database.
          thus, the slave does not need to copy down all the data when it sees this.
+
+       note this is used for single collection logging even when --replSet is enabled.
     */
-    static void _logOp(const char *opstr, const char *ns, const char *logNS, const BSONObj& obj, BSONObj *o2, bool *bb, const OpTime &ts ) {
+    static void _logOpOld(const char *opstr, const char *ns, const char *logNS, const BSONObj& obj, BSONObj *o2, bool *bb ) {
+        DEV assertInWriteLock();
+        static BufBuilder bufbuilder(32*1024);
+        
         if ( strncmp(ns, "local.", 6) == 0 ){
             if ( strncmp(ns, "local.slaves", 12) == 0 ){
                 resetSlaveCache();
@@ -61,15 +76,15 @@ namespace mongo {
             return;
         }
 
-        DEV assertInWriteLock();
-        
+        const OpTime ts = OpTime::now();
         Client::Context context;
         
         /* we jump through a bunch of hoops here to avoid copying the obj buffer twice --
            instead we do a single copy to the destination position in the memory mapped file.
         */
 
-        BSONObjBuilder b;
+        bufbuilder.reset();
+        BSONObjBuilder b(bufbuilder);
         b.appendTimestamp("ts", ts.asDate());
         b.append("op", opstr);
         b.append("ns", ns);
@@ -82,7 +97,8 @@ namespace mongo {
         int len = posz + obj.objsize() + 1 + 2 /*o:*/;
 
         Record *r;
-        if ( strncmp( logNS, "local.", 6 ) == 0 ) { // For now, assume this is olog main
+        if( logNS == 0 ) {
+            logNS = "local.oplog.$main";
             if ( localOplogMainDetails == 0 ) {
                 Client::Context ctx("local.", dbpath, 0, false);
                 localOplogDB = ctx.db();
@@ -115,21 +131,27 @@ namespace mongo {
         context.getClient()->setLastOp( ts );
     }
 
+    static void (*_logOp)(const char *opstr, const char *ns, const char *logNS, const BSONObj& obj, BSONObj *o2, bool *bb ) = _logOpOld;
+    void newReplUp() { _logOp = _logOpRS; }
+    void newRepl() { _logOp = _logOpUninitialized; }
+    void oldRepl() { _logOp = _logOpOld; }
+
     void logKeepalive() { 
         BSONObj obj;
-        _logOp("n", "", "local.oplog.$main", obj, 0, 0, OpTime::now());
+        _logOp("n", "", 0, obj, 0, 0);
     }
 
     void logOp(const char *opstr, const char *ns, const BSONObj& obj, BSONObj *patt, bool *b) {
         if ( replSettings.master ) {
-            _logOp(opstr, ns, "local.oplog.$main", obj, patt, b, OpTime::now());
-            char cl[ 256 ];
-            nsToDatabase( ns, cl );
+            _logOp(opstr, ns, 0, obj, patt, b);
+            // why? :
+            //char cl[ 256 ];
+            //nsToDatabase( ns, cl );
         }
         NamespaceDetailsTransient &t = NamespaceDetailsTransient::get_w( ns );
         if ( t.cllEnabled() ) {
             try {
-                _logOp(opstr, ns, t.cllNS().c_str(), obj, patt, b, OpTime::now());
+                _logOpOld(opstr, ns, t.cllNS().c_str(), obj, patt, b);
             } catch ( const DBException & ) {
                 t.cllInvalidate();
             }
@@ -267,7 +289,5 @@ namespace mongo {
             assert( !(q != t) );
         }
     } testoptime;
-
-    
 
 }

@@ -439,6 +439,7 @@
     <ClCompile Include="..\s\shardconnection.cpp" />
     <ClCompile Include="..\util\concurrency\task.cpp" />
     <ClCompile Include="..\util\concurrency\vars.cpp" />
+    <ClCompile Include="..\util\version.cpp" />
     <ClCompile Include="oplog.cpp" />
     <ClCompile Include="repl.cpp" />
     <ClCompile Include="repl\consensus.cpp" />
@@ -548,7 +549,7 @@
     <ClCompile Include="btree.cpp" />
     <ClCompile Include="btreecursor.cpp" />
     <ClCompile Include="repl\health.cpp" />
-    <ClCompile Include="repl\replset.cpp" />
+    <ClCompile Include="repl\rs.cpp" />
     <ClCompile Include="repl\replset_commands.cpp" />
     <ClCompile Include="repl\rs_config.cpp" />
   </ItemGroup>
@@ -587,7 +588,7 @@
     <ClInclude Include="repl\connections.h" />
     <ClInclude Include="repl\multicmd.h" />
     <ClInclude Include="repl\rsmember.h" />
-    <ClInclude Include="repl\rstime.h" />
+    <ClInclude Include="repl\rs_optime.h" />
     <ClInclude Include="stats\counters.h" />
     <ClInclude Include="stats\snapshots.h" />
     <ClInclude Include="stats\top.h" />
@@ -648,7 +649,6 @@
     <ClInclude Include="..\util\log.h" />
     <ClInclude Include="..\util\lruishmap.h" />
     <ClInclude Include="..\util\mmap.h" />
-    <ClInclude Include="..\util\mvar.h" />
     <ClInclude Include="..\util\ntservice.h" />
     <ClInclude Include="..\util\optime.h" />
     <ClInclude Include="..\util\processinfo.h" />
@@ -667,7 +667,6 @@
     <ClInclude Include="..\util\message_server.h" />
     <ClInclude Include="..\util\sock.h" />
     <ClInclude Include="..\scripting\engine.h" />
-    <ClInclude Include="..\scripting\engine_java.h" />
     <ClInclude Include="..\scripting\engine_spidermonkey.h" />
     <ClInclude Include="..\scripting\engine_v8.h" />
     <ClInclude Include="..\scripting\v8_db.h" />
@@ -676,7 +675,7 @@
     <ClInclude Include="btree.h" />
     <ClInclude Include="repl\health.h" />
     <ClInclude Include="..\util\hostandport.h" />
-    <ClInclude Include="repl\replset.h" />
+    <ClInclude Include="repl\rs.h" />
     <ClInclude Include="repl\rs_config.h" />
     <ClInclude Include="..\bson\bsonelement.h" />
     <ClInclude Include="..\bson\bsoninlines.h" />

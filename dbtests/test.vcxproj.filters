@@ -592,9 +592,6 @@
     <ClCompile Include="..\db\repl\health.cpp">
       <Filter>replsets</Filter>
     </ClCompile>
-    <ClCompile Include="..\db\repl\replset.cpp">
-      <Filter>replsets</Filter>
-    </ClCompile>
     <ClCompile Include="..\db\repl\replset_commands.cpp">
       <Filter>replsets</Filter>
     </ClCompile>
@@ -630,6 +627,12 @@
     </ClCompile>
     <ClCompile Include="..\util\concurrency\thread_pool.cpp">
       <Filter>util\concurrency</Filter>
+    </ClCompile>
+    <ClCompile Include="..\util\version.cpp">
+      <Filter>db\cpp</Filter>
+    </ClCompile>
+    <ClCompile Include="..\db\repl\rs.cpp">
+      <Filter>replsets</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

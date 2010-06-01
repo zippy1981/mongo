@@ -72,6 +72,7 @@ namespace mongo {
     class ShardedMessageHandler : public MessageHandler {
     public:
         virtual ~ShardedMessageHandler(){}
+
         virtual void process( Message& m , AbstractMessagingPort* p ){
             assert( p );
             Request r( m , p );
@@ -97,6 +98,11 @@ namespace mongo {
                 }
             }
         }
+
+        virtual void disconnected( AbstractMessagingPort* p ){
+            ClientInfo::disconnect( p->getClientId() );
+            lastError.disconnect( p->getClientId() );
+        }
     };
 
     void sighandler(int sig){
@@ -115,14 +121,14 @@ namespace mongo {
         setupSignals();
     }
 
-    void start() {
+    void start( const MessageServer::Options& opts ){
         balancer.go();
 
         log() << "waiting for connections on port " << cmdLine.port << endl;
         //DbGridListener l(port);
         //l.listen();
         ShardedMessageHandler handler;
-        MessageServer * server = createServer( cmdLine.port , &handler );
+        MessageServer * server = createServer( opts , &handler );
         server->run();
     }
 
@@ -156,6 +162,8 @@ int main(int argc, char* argv[], char *envp[] ) {
     CmdLine::addGlobalOptions( options , hidden );
     
     options.add_options()
+        ("bind_ip", po::value<string>()->default_value(""),
+         "comma separated list of ip addresses to listen on - all local ips by default")
         ( "configdb" , po::value<string>() , "1 or 3 comma separated config servers" )
         ( "test" , "just run unit tests" )
         ( "upgrade" , "upgrade meta data version" )
@@ -252,7 +260,12 @@ int main(int argc, char* argv[], char *envp[] ) {
     configServer.reloadSettings();
     
     init();
-    start();
+
+    MessageServer::Options opts;
+    opts.port = cmdLine.port;
+    opts.ipList = params["bind_ip"].as<string>();
+    start(opts);
+
     dbexit( EXIT_CLEAN );
     return 0;
 }
