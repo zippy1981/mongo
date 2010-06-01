@@ -1125,6 +1125,10 @@
 				RelativePath="..\util\unittest.h"
 				>
 			</File>
+			<File
+				RelativePath="..\util\version.cpp"
+				>
+			</File>
 			<Filter
 				Name="cpp"
 				>
@@ -1411,11 +1415,15 @@
 				>
 			</File>
 			<File
-				RelativePath="..\db\repl\replset.cpp"
+				RelativePath="..\db\repl\replset_commands.cpp"
 				>
 			</File>
 			<File
-				RelativePath="..\db\repl\replset_commands.cpp"
+				RelativePath="..\db\repl\rs.cpp"
+				>
+			</File>
+			<File
+				RelativePath="..\db\repl\rs.h"
 				>
 			</File>
 			<File

@@ -46,7 +46,6 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "other source files", "other
 	ProjectSection(SolutionItems) = preProject
 		..\buildscripts\buildboost.bat = ..\buildscripts\buildboost.bat
 		..\buildscripts\buildboost64.bat = ..\buildscripts\buildboost64.bat
-		..\SConstruct = ..\SConstruct
 	EndProjectSection
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "bsondemo", "..\bson\bsondemo\bsondemo.vcproj", "{C9DB5EB7-81AA-4185-BAA1-DA035654402F}"

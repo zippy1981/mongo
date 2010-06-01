@@ -1509,6 +1509,10 @@
 				RelativePath="..\util\util.cpp"
 				>
 			</File>
+			<File
+				RelativePath="..\util\version.cpp"
+				>
+			</File>
 			<Filter
 				Name="concurrency"
 				>
@@ -1799,15 +1803,15 @@
 				>
 			</File>
 			<File
-				RelativePath=".\repl\replset.cpp"
-				>
-			</File>
-			<File
-				RelativePath=".\repl\replset.h"
-				>
-			</File>
-			<File
 				RelativePath=".\repl\replset_commands.cpp"
+				>
+			</File>
+			<File
+				RelativePath=".\repl\rs.cpp"
+				>
+			</File>
+			<File
+				RelativePath=".\repl\rs.h"
 				>
 			</File>
 			<File

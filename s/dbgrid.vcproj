@@ -1016,6 +1016,10 @@
 				RelativePath="..\util\concurrency\vars.cpp"
 				>
 			</File>
+			<File
+				RelativePath="..\util\version.cpp"
+				>
+			</File>
 		</Filter>
 		<File
 			RelativePath="..\pch.cpp"
