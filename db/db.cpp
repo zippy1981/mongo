@@ -651,7 +651,7 @@ int main(int argc, char* argv[], char *envp[] )
 
     #if defined(_WIN32)
     windows_scm_options.add_options()
-		    ("install", "install mongodb service")
+        ("install", "install mongodb service")
         ("remove", "remove mongodb service")
         ("service", "start mongodb service")
 		;
