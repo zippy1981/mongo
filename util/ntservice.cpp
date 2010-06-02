@@ -128,15 +128,17 @@ namespace mongo {
 		
 		// stop service if running
 		if ( ::ControlService( schService, SERVICE_CONTROL_STOP, &serviceStatus ) ) {
-			log() << "Service " << toUtf8String(serviceName) << " is currently running. Stopping service . . ." << endl;
+			log() << "Service " << toUtf8String(serviceName) << " is currently running. Stopping service." << endl;
 			while ( ::QueryServiceStatus( schService, &serviceStatus ) ) {
 				if ( serviceStatus.dwCurrentState == SERVICE_STOP_PENDING )
-					Sleep( 1000 );
+                {
+                    Sleep( 1000 );
+				}
 			}
 			log() << "Service stopped." << endl;
 		}
 
-		log() << "Deleting service . . ." << toUtf8String(serviceName) << ". . . ";
+		log() << "Deleting service . . ." << toUtf8String(serviceName) << "." << endl;
 		bool serviceRemoved = ::DeleteService( schService );
 		
 		::CloseServiceHandle( schService );
