@@ -36,13 +36,17 @@
 shell/mongo.cpp
 shell/mongo-server.cpp
 
+# Visual Studio and Resharper related files and directories
 */Debug/
 */*/Debug/
 */Release/
 */*/Release/
+*.user
+_ReSharper.db
+
+db/oplog*
 db/.gdb*
 db/makefile.local
-db/_ReSharper.db
 config.log
 settings.py
 buildinfo.cpp
