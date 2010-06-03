@@ -115,10 +115,10 @@ namespace mongo {
 		if ( ::ControlService( schService, SERVICE_CONTROL_STOP, &serviceStatus ) ) {
 			while ( ::QueryServiceStatus( schService, &serviceStatus ) ) {
 				if ( serviceStatus.dwCurrentState == SERVICE_STOP_PENDING )
-        {
-          Sleep( 1000 );
-        }
-        else { break; }
+				{
+				  Sleep( 1000 );
+				}
+				else { break; }
 			}
 		}
 
