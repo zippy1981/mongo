@@ -1498,6 +1498,10 @@
 				>
 			</File>
 			<File
+				RelativePath="..\util\text.cpp"
+				>
+			</File>
+			<File
 				RelativePath="..\util\thread_pool.h"
 				>
 			</File>

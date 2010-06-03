@@ -1202,6 +1202,10 @@
 					>
 				</File>
 				<File
+					RelativePath="..\util\text.cpp"
+					>
+				</File>
+				<File
 					RelativePath="..\util\util.cpp"
 					>
 				</File>
