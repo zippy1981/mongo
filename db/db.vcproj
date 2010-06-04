@@ -1406,10 +1406,6 @@
 				>
 			</File>
 			<File
-				RelativePath="..\util\builder.h"
-				>
-			</File>
-			<File
 				RelativePath="..\util\debug_util.h"
 				>
 			</File>
@@ -1438,15 +1434,7 @@
 				>
 			</File>
 			<File
-				RelativePath="..\util\interlocked.h"
-				>
-			</File>
-			<File
 				RelativePath=".\lasterror.h"
-				>
-			</File>
-			<File
-				RelativePath="..\util\locks.h"
 				>
 			</File>
 			<File
@@ -1463,10 +1451,6 @@
 			</File>
 			<File
 				RelativePath="..\util\mmap.h"
-				>
-			</File>
-			<File
-				RelativePath="..\util\mvar.h"
 				>
 			</File>
 			<File
@@ -1498,15 +1482,15 @@
 				>
 			</File>
 			<File
-				RelativePath="..\util\thread_pool.h"
-				>
-			</File>
-			<File
 				RelativePath="..\util\unittest.h"
 				>
 			</File>
 			<File
 				RelativePath="..\util\util.cpp"
+				>
+			</File>
+			<File
+				RelativePath="..\util\version.cpp"
 				>
 			</File>
 			<Filter
@@ -1799,15 +1783,15 @@
 				>
 			</File>
 			<File
-				RelativePath=".\repl\replset.cpp"
-				>
-			</File>
-			<File
-				RelativePath=".\repl\replset.h"
-				>
-			</File>
-			<File
 				RelativePath=".\repl\replset_commands.cpp"
+				>
+			</File>
+			<File
+				RelativePath=".\repl\rs.cpp"
+				>
+			</File>
+			<File
+				RelativePath=".\repl\rs.h"
 				>
 			</File>
 			<File

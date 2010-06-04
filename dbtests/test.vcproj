@@ -1074,10 +1074,6 @@
 			Name="util"
 			>
 			<File
-				RelativePath="..\util\builder.h"
-				>
-			</File>
-			<File
 				RelativePath="..\util\debug_util.cpp"
 				>
 			</File>
@@ -1127,6 +1123,10 @@
 			</File>
 			<File
 				RelativePath="..\util\unittest.h"
+				>
+			</File>
+			<File
+				RelativePath="..\util\version.cpp"
 				>
 			</File>
 			<Filter
@@ -1202,7 +1202,7 @@
 					>
 				</File>
 				<File
-					RelativePath="..\util\thread_pool.cpp"
+					RelativePath="..\util\text.cpp"
 					>
 				</File>
 				<File
@@ -1227,6 +1227,10 @@
 				</File>
 				<File
 					RelativePath="..\util\concurrency\task.h"
+					>
+				</File>
+				<File
+					RelativePath="..\util\concurrency\thread_pool.cpp"
 					>
 				</File>
 				<File
@@ -1415,11 +1419,11 @@
 				>
 			</File>
 			<File
-				RelativePath="..\db\repl\replset.cpp"
+				RelativePath="..\db\repl\replset_commands.cpp"
 				>
 			</File>
 			<File
-				RelativePath="..\db\repl\replset_commands.cpp"
+				RelativePath="..\db\repl\rs.cpp"
 				>
 			</File>
 			<File
