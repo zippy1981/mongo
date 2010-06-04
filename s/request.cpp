@@ -42,7 +42,7 @@ namespace mongo {
         assert( _d.getns() );
         _id = _m.header()->id;
         
-        _clientId = p ? p->remotePort() << 16 : 0;
+        _clientId = p ? p->getClientId() : 0;
         _clientInfo = ClientInfo::get( _clientId );
         _clientInfo->newRequest( p );
         
@@ -157,15 +157,18 @@ namespace mongo {
     }
     
     ClientInfo::~ClientInfo(){
-        scoped_lock lk( _clientsLock );
-        ClientCache::iterator i = _clients.find( _id );
-        if ( i != _clients.end() ){
-            _clients.erase( i );
+        if ( _lastAccess ){
+            scoped_lock lk( _clientsLock );
+            ClientCache::iterator i = _clients.find( _id );
+            if ( i != _clients.end() ){
+                _clients.erase( i );
+            }
         }
     }
     
     void ClientInfo::addShard( const string& shard ){
         _cur->insert( shard );
+        _sinceLastGetError.insert( shard );
     }
     
     void ClientInfo::newRequest( AbstractMessagingPort* p ){
@@ -219,6 +222,21 @@ namespace mongo {
         return info;
     }
         
+    void ClientInfo::disconnect( int clientId ){
+        if ( ! clientId )
+            return;
+
+        scoped_lock lk( _clientsLock );
+        ClientCache::iterator i = _clients.find( clientId );
+        if ( i == _clients.end() )
+            return;
+
+        ClientInfo* ci = i->second;
+        ci->disconnect();
+        delete ci;
+        _clients.erase( i );
+    }
+
     ClientCache& ClientInfo::_clients = *(new ClientCache());
     mongo::mutex ClientInfo::_clientsLock("_clientsLock");
     boost::thread_specific_ptr<ClientInfo> ClientInfo::_tlInfo;

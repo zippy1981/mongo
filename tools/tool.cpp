@@ -45,6 +45,7 @@ namespace mongo {
             ("help","produce help message")
             ("verbose,v", "be more verbose (include multiple times for more verbosity e.g. -vvvvv)")
             ("host,h",po::value<string>(), "mongo host to connect to (\"left,right\" for pairs)" )
+            ("port",po::value<string>(), "server port. Can also use --host hostname:port" )
             ("db,d",po::value<string>(), "database to use" )
             ("collection,c",po::value<string>(), "collection to use (some commands)" )
             ("username,u",po::value<string>(), "username" )
@@ -53,9 +54,9 @@ namespace mongo {
             ;
         if ( localDBAllowed )
             _options->add_options()
-                ("dbpath",po::value<string>(), "directly access mongod data "
-                 "files in the given path, instead of connecting to a mongod "
-                 "instance - needs to lock the data directory, so cannot be "
+                ("dbpath",po::value<string>(), "directly access mongod database "
+                 "files in the given path, instead of connecting to a mongod  "
+                 "server - needs to lock the data directory, so cannot be "
                  "used if a mongod is currently accessing the same path" )
                 ("directoryperdb", "if dbpath specified, each db is in a separate directory" )
                 ;
@@ -146,6 +147,9 @@ namespace mongo {
             _host = "127.0.0.1";
             if ( _params.count( "host" ) )
                 _host = _params["host"].as<string>();
+
+            if ( _params.count( "port" ) )
+                _host += ':' + _params["port"].as<string>();
             
             if ( _noconnection ){
                 // do nothing
@@ -254,7 +258,7 @@ namespace mongo {
             pcrecpp::StringPiece input(fields_arg);
         
             string f;
-            pcrecpp::RE re("([#\\w\\.\\s]+),?" );
+            pcrecpp::RE re("([#\\w\\.\\s\\-]+),?" );
             while ( re.Consume( &input, &f ) ){
                 _fields.push_back( f );
                 b.append( f.c_str() , 1 );

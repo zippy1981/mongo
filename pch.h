@@ -20,6 +20,18 @@
 
 #pragma once
 
+#if defined(MONGO_EXPOSE_MACROS)
+#define JS_C_STRINGS_ARE_UTF8
+#undef _UNICODE
+#define _UNICODE
+#undef UNICODE
+#define UNICODE
+#undef SUPPORT_UCP
+#define SUPPORT_UCP
+#undef SUPPORT_UTF8
+#define SUPPORT_UTF8
+#endif
+
 #if defined(_WIN32)
 #  define NOMINMAX
 #  include <winsock2.h> //this must be included before the first windows.h include
@@ -95,6 +107,7 @@ namespace mongo {
         EXIT_OOM_REALLOC = 43 , 
         EXIT_FS = 45 ,
         EXIT_CLOCK_SKEW = 47 ,
+        EXIT_NET_ERROR = 48 ,
         EXIT_POSSIBLE_CORRUPTION = 60 , // this means we detected a possible corruption situation, like a buf overflow
         EXIT_UNCAUGHT = 100 , // top level exception that wasn't caught
         EXIT_TEST = 101 ,
@@ -105,7 +118,7 @@ namespace mongo {
 
     /**
        this is here so you can't just type exit() to quit the program
-       you should either use dbexit to shutdown cleanly, or ::exit to tell the system to quiy
+       you should either use dbexit to shutdown cleanly, or ::exit to tell the system to quit
        if you use this, you'll get a link error since mongo::exit isn't defined
      */
     void exit( ExitCode returnCode );
@@ -136,5 +149,8 @@ namespace mongo {
 namespace mongo {
 
     typedef char _TCHAR;
+
+    using boost::uint32_t;
+    using boost::uint64_t;
 
 } // namespace mongo

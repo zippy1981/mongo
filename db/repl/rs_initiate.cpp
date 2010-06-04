@@ -23,7 +23,7 @@
 #include "../../util/mmap.h"
 #include "../../util/mongoutils/str.h"
 #include "health.h"
-#include "replset.h"
+#include "rs.h"
 #include "rs_config.h"
 
 using namespace bson;
@@ -67,19 +67,28 @@ namespace mongo {
         }
     }
 
-    class CmdReplSetInitiate : public Command { 
+    class CmdReplSetInitiate : public ReplSetCommand { 
     public:
         virtual LockType locktype() const { return WRITE; }
-        virtual bool slaveOk() const { return true; }
-        virtual bool adminOnly() const { return true; }
-        virtual bool logTheOp() { return false; }
-        CmdReplSetInitiate() : Command("replSetInitiate") { }
+        CmdReplSetInitiate() : ReplSetCommand("replSetInitiate") { }
         virtual void help(stringstream& h) const { 
             h << "Initiate/christen a replica set."; 
             h << "\nhttp://www.mongodb.org/display/DOCS/Replica+Set+Commands";
         }
         virtual bool run(const string& , BSONObj& cmdObj, string& errmsg, BSONObjBuilder& result, bool fromRepl) {
             log() << "replSet replSetInitiate admin command received from client" << rsLog;
+
+            if( 0 ) {
+                // just make sure we can get a write lock before doing anything else.  we'll reacquire one 
+                // later.  of course it could be stuck then, but this check lowers the risk if weird things 
+                // are up.
+                time_t t = time(0);
+                writelock lk("admin.");
+                if( time(0)-t > 10 ) { 
+                    errmsg = "took a long time to get write lock, so not initiating.  Initiate when server less busy?";
+                    return false;
+                }
+            }
 
             if( !replSet ) { 
                 errmsg = "server is not running with --replSet";
@@ -116,10 +125,6 @@ namespace mongo {
                 checkAllMembersUpForConfigChange(newConfig);
 
                 log() << "replSet replSetInitiate all members seem up" << rsLog;
-
-                //log() << newConfig.toString() << rsLog;
-
-                string z = str::after("abcde", 'c');
 
                 newConfig.saveConfigLocally();
             }

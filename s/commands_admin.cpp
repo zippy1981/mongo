@@ -212,7 +212,7 @@ namespace mongo {
                     return false;
                 }
 
-                DBConfig * config = grid.getDBConfig( dbname , false );
+                DBConfigPtr config = grid.getDBConfig( dbname , false );
                 if ( ! config ){
                     errmsg = "can't find db!";
                     return false;
@@ -287,7 +287,7 @@ namespace mongo {
                     return false;
                 }
 
-                DBConfig * config = grid.getDBConfig( dbname );
+                DBConfigPtr config = grid.getDBConfig( dbname );
                 if ( config->isShardingEnabled() ){
                     errmsg = "already enabled";
                     return false;
@@ -319,7 +319,7 @@ namespace mongo {
                     return false;
                 }
 
-                DBConfig * config = grid.getDBConfig( ns );
+                DBConfigPtr config = grid.getDBConfig( ns );
                 if ( ! config->isShardingEnabled() ){
                     errmsg = "sharding not enabled for db";
                     return false;
@@ -395,7 +395,7 @@ namespace mongo {
                     return false;
                 }
                 
-                DBConfig * config = grid.getDBConfig( ns );
+                DBConfigPtr config = grid.getDBConfig( ns );
                 if ( ! config->isSharded( ns ) ){
                     errmsg = "ns not sharded.";
                     return false;
@@ -435,7 +435,7 @@ namespace mongo {
                     return false;
                 }
 
-                DBConfig * config = grid.getDBConfig( ns );
+                DBConfigPtr config = grid.getDBConfig( ns );
                 if ( ! config->isSharded( ns ) ){
                     errmsg = "ns not sharded.  have to shard before can split";
                     return false;
@@ -515,7 +515,7 @@ namespace mongo {
                     return false;
                 }
 
-                DBConfig * config = grid.getDBConfig( ns );
+                DBConfigPtr config = grid.getDBConfig( ns );
                 if ( ! config->isSharded( ns ) ){
                     errmsg = "ns not sharded.  have to shard before can move a chunk";
                     return false;
@@ -783,8 +783,6 @@ namespace mongo {
                     }
                 }
                 
-                DBConfig * conf = grid.getDBConfig( dbName , false );
-                
                 ClientInfo * client = ClientInfo::get();
                 set<string> * shards = client->getPrev();
                 
@@ -793,27 +791,55 @@ namespace mongo {
                     return true;
                 }
                 
+                // handle single server
                 if ( shards->size() == 1 ){
                     string theShard = *(shards->begin() );
                     result.append( "theshard" , theShard.c_str() );
                     ShardConnection conn( theShard , "" );
                     BSONObj res;
-                    bool ok = conn->runCommand( conf->getName() , cmdObj , res );
+                    bool ok = conn->runCommand( dbName , cmdObj , res );
                     result.appendElements( res );
                     conn.done();
+                    
+                    // hit other machines just to block
+                    for ( set<string>::iterator i=client->sinceLastGetError().begin(); i!=client->sinceLastGetError().end(); ++i ){
+                        string temp = *i;
+                        if ( temp == theShard )
+                            continue;
+                        
+                        ShardConnection conn( temp , "" );
+                        conn->getLastError();
+                        conn.done();
+                    }
+                    client->clearSinceLastGetError();
                     return ok;
                 }
                 
+                // hit each shard
                 vector<string> errors;
                 for ( set<string>::iterator i = shards->begin(); i != shards->end(); i++ ){
                     string theShard = *i;
                     ShardConnection conn( theShard , "" );
-                    string temp = conn->getLastError();
-                    if ( temp.size() )
+                    BSONObj res;
+                    bool ok = conn->runCommand( dbName , cmdObj , res );
+                    string temp = DBClientWithCommands::getLastErrorString( res );
+                    if ( ok == false || temp.size() )
                         errors.push_back( temp );
                     conn.done();
                 }
                 
+                // hit other machines just to block
+                for ( set<string>::iterator i=client->sinceLastGetError().begin(); i!=client->sinceLastGetError().end(); ++i ){
+                    string temp = *i;
+                    if ( shards->count( temp ) )
+                        continue;
+                    
+                    ShardConnection conn( temp , "" );
+                    conn->getLastError();
+                    conn.done();
+                }
+                client->clearSinceLastGetError();
+
                 if ( errors.size() == 0 ){
                     result.appendNull( "err" );
                     return true;

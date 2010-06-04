@@ -17,21 +17,25 @@
 #include "pch.h"
 #include "../cmdline.h"
 #include "../../util/sock.h"
-#include "replset.h"
 #include "../client.h"
+#include "../../client/dbclient.h"
+#include "../dbhelpers.h"
+#include "rs.h"
 
 namespace mongo { 
 
     bool replSet = false;
     ReplSet *theReplSet = 0;
+    RSOpTime rsOpTime;
 
-    void ReplSet::assumePrimary() { 
+    void ReplSetImpl::assumePrimary() { 
+        writelock lk("admin."); // so we are synchronized with _logOp() 
         _myState = PRIMARY;
         _currentPrimary = _self;
         log() << "replSet self is now primary" << rsLog;
     }
 
-    void ReplSet::relinquish() { 
+    void ReplSetImpl::relinquish() { 
         if( state() == PRIMARY ) {
             _myState = RECOVERING;
             log() << "replSet info relinquished primary state" << rsLog;
@@ -40,7 +44,7 @@ namespace mongo {
             _myState = RECOVERING;
     }
 
-    void ReplSet::msgUpdateHBInfo(HeartbeatInfo h) { 
+    void ReplSetImpl::msgUpdateHBInfo(HeartbeatInfo h) { 
         for( Member *m = _members.head(); m; m=m->next() ) {
             if( m->id() == h.id() ) {
                 m->_hbinfo = h;
@@ -49,7 +53,7 @@ namespace mongo {
         }
     }
 
-    list<HostAndPort> ReplSet::memberHostnames() const { 
+    list<HostAndPort> ReplSetImpl::memberHostnames() const { 
         list<HostAndPort> L;
         L.push_back(_self->h());
         for( Member *m = _members.head(); m; m = m->next() )
@@ -57,16 +61,18 @@ namespace mongo {
         return L;
     }
 
-    void ReplSet::fillIsMaster(BSONObjBuilder& b) {
-        b.append("ismaster", 0);
-        b.append("ok", false);
-        b.append("msg", "not yet implemented");
+    void ReplSetImpl::_fillIsMaster(BSONObjBuilder& b) {
+        b.append("ismaster", isPrimary());
+        b.append("secondary", isSecondary());
+        b.append("msg", "replica sets not yet fully implemented. do not use yet.");
         {
             BSONObjBuilder a;
             int n = 0;
             a.append("0", _self->h().toString());
-            for( Member *m = _members.head(); m; m = m->next() )
-                a.append(BSONObjBuilder::numStr(n++).c_str(), m->h().toString());
+            for( Member *m = _members.head(); m; m = m->next() ) {
+                if( m->hot() )
+                    a.append(BSONObjBuilder::numStr(++n).c_str(), m->h().toString());
+            }
             b.appendArray("hosts", a.done());
         }
     }
@@ -78,7 +84,7 @@ namespace mongo {
     }
 */
     /** @param cfgString <setname>/<seedhost1>,<seedhost2> */
-    ReplSet::ReplSet(string cfgString) : elect(this), 
+    ReplSetImpl::ReplSetImpl(string cfgString) : elect(this), 
         _self(0), 
         mgr( new Manager(this) )
     {
@@ -135,10 +141,39 @@ namespace mongo {
         }
     }
 
-    ReplSet::StartupStatus ReplSet::startupStatus = PRESTART;
-    string ReplSet::startupStatusMsg;
+    void newReplUp();
 
-    void ReplSet::initFromConfig(ReplSetConfig& c) { //, bool save) { 
+    void RSOpTime::load() { 
+        ord = 0;
+        readlock lk(rsoplog);
+        BSONObj o;
+        if( Helpers::getLast(rsoplog.c_str(), o) ) { 
+            ord = (unsigned long long) o["t"].Long();
+            uassert(13290, "bad replSet oplog entry?", ord > 0);
+        }
+    }
+
+    /* call after constructing to start - returns fairly quickly after launching its threads */
+    void ReplSetImpl::_go() { 
+        try { 
+            rsOpTime.load();
+        }
+        catch(std::exception& e) { 
+            log() << "replSet ERROR FATAL couldn't query the local " << rsoplog << " collection.  Terminating mongod after 30 seconds." << rsLog;
+            log() << e.what() << rsLog;
+            sleepsecs(30);
+            dbexit( EXIT_REPLICATION_ERROR );
+            return;
+        }
+        _myState = STARTUP2;
+        startThreads();
+        newReplUp();
+    }
+
+    ReplSetImpl::StartupStatus ReplSetImpl::startupStatus = PRESTART;
+    string ReplSetImpl::startupStatusMsg;
+
+    void ReplSetImpl::initFromConfig(ReplSetConfig& c) { //, bool save) { 
         _cfg = new ReplSetConfig(c);
         assert( _cfg->ok() );
         assert( _name.empty() || _name == _cfg->_id );
@@ -166,7 +201,7 @@ namespace mongo {
     }
 
     // Our own config must be the first one.
-    void ReplSet::_loadConfigFinish(vector<ReplSetConfig>& cfgs) { 
+    void ReplSetImpl::_loadConfigFinish(vector<ReplSetConfig>& cfgs) { 
         int v = -1;
         ReplSetConfig *highest = 0;
         int myVersion = -2000;
@@ -188,7 +223,7 @@ namespace mongo {
         }
     }
 
-    void ReplSet::loadConfig() {
+    void ReplSetImpl::loadConfig() {
         while( 1 ) {
             startupStatus = LOADINGCONFIG;
             startupStatusMsg = "loading " + rsConfigNs + " config (LOADINGCONFIG)";
@@ -232,7 +267,7 @@ namespace mongo {
                 startupStatusMsg = "replSet error loading set config (BADCONFIG)";
                 log() << "replSet error loading configurations " << e.toString() << rsLog;
                 log() << "replSet replication will not start" << rsLog;
-                fatal();
+                _fatal();
                 throw;
             }
             break;
@@ -241,9 +276,16 @@ namespace mongo {
         startupStatus = STARTED;
     }
 
+    void ReplSetImpl::_fatal() 
+    { 
+        lock l(this);
+        _myState = FATAL; 
+        log() << "replSet error fatal error, stopping replication" << rsLog; 
+    }
+
     /* forked as a thread during startup 
        it can run quite a while looking for config.  but once found, 
-       a separate thread takes over as ReplSet::Manager, and this thread
+       a separate thread takes over as ReplSetImpl::Manager, and this thread
        terminates.
     */
     void startReplSets() {

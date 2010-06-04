@@ -54,7 +54,7 @@ namespace mongo {
        x is in a shard iff
        min <= x < max
      */    
-    class Chunk : public Model , boost::noncopyable {
+    class Chunk : public Model , boost::noncopyable, public boost::enable_shared_from_this<Chunk>  {
     public:
 
         Chunk( ChunkManager * info );
@@ -158,8 +158,6 @@ namespace mongo {
 
         long _dataWritten;
         
-        ChunkPtr _this;
-
         // methods, etc..
         
         void _split( BSONObj& middle );
@@ -310,6 +308,7 @@ namespace mongo {
     private:
         
         void _reload();
+        void _reload_inlock();
         void _load();
         
         DBConfig * _config;

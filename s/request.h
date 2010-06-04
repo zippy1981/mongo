@@ -52,7 +52,7 @@ namespace mongo {
             return _id;
         }
 
-        DBConfig * getConfig() const {
+        DBConfigPtr getConfig() const {
             return _config;
         }
         bool isShardingEnabled() const {
@@ -96,7 +96,7 @@ namespace mongo {
         AbstractMessagingPort* _p;
         
         MSGID _id;
-        DBConfig * _config;
+        DBConfigPtr _config;
         ChunkManagerPtr _chunkManager;
         
         int _clientId;
@@ -121,7 +121,13 @@ namespace mongo {
         void disconnect();
         
         static ClientInfo * get( int clientId = 0 , bool create = true );
+        static void disconnect( int clientId );
         
+        const set<string>& sinceLastGetError() const { return _sinceLastGetError; }
+        void clearSinceLastGetError(){ 
+            _sinceLastGetError.clear(); 
+        }
+
     private:
         int _id;
         string _remote;
@@ -132,6 +138,8 @@ namespace mongo {
         set<string> * _prev;
         int _lastAccess;
         
+        set<string> _sinceLastGetError;
+
         static mongo::mutex _clientsLock;
         static ClientCache& _clients;
         static boost::thread_specific_ptr<ClientInfo> _tlInfo;

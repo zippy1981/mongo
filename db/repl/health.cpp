@@ -15,7 +15,7 @@
 */
 
 #include "pch.h"
-#include "replset.h"
+#include "rs.h"
 #include "health.h"
 #include "../../util/background.h"
 #include "../../client/dbclient.h"
@@ -62,7 +62,7 @@ namespace mongo {
         return s.str();
     }
 
-    void ReplSet::Member::summarizeAsHtml(stringstream& s) const { 
+    void Member::summarizeAsHtml(stringstream& s) const { 
         s << tr();
         {
             stringstream u;
@@ -83,10 +83,13 @@ namespace mongo {
         s << td(config().votes);
         s << td(ReplSet::stateAsStr(state()));
         s << td( red(hbinfo().lastHeartbeatMsg,!ok) );
+        stringstream q;
+        q << "/_replSetOplog?" << id();
+        s << td( a(q.str(), "", "finish") );
         s << _tr();
     }
 
-    string ReplSet::stateAsHtml(MemberState s) { 
+    string ReplSetImpl::stateAsHtml(MemberState s) { 
         if( s == STARTUP ) return a("", "serving still starting up, or still trying to initiate the set", "STARTUP");
         if( s == PRIMARY ) return a("", "this server thinks it is primary", "PRIMARY");
         if( s == SECONDARY ) return a("", "this server thinks it is a secondary (slave mode)", "SECONDARY");
@@ -96,7 +99,7 @@ namespace mongo {
         return "";
     }
 
-    string ReplSet::stateAsStr(MemberState s) { 
+    string ReplSetImpl::stateAsStr(MemberState s) { 
         if( s == STARTUP ) return "STARTUP";
         if( s == PRIMARY ) return "PRIMARY";
         if( s == SECONDARY ) return "SECONDARY";
@@ -108,7 +111,53 @@ namespace mongo {
 
     extern time_t started;
 
-    void ReplSet::summarizeAsHtml(stringstream& s) const { 
+    static void say(stringstream&ss, const bo& op) {
+        ss << op.toString() << '\n';
+    }
+
+    void ReplSetImpl::_getOplogDiagsAsHtml(unsigned server_id, stringstream& ss) const { 
+        Member *m = findById(server_id);
+        if( m == 0 ) { 
+            ss << "Error : can't find a member with id: " << server_id << '\n';
+            return;
+        }
+
+        const bo fields = BSON( "o" << -1 << "o2" << -1 );
+
+        ScopedConn conn(m->fullName());        
+
+        auto_ptr<DBClientCursor> c = conn->query(rsoplog, Query().sort("$natural",1), 20, 0, &fields);
+        ss << "<pre>\n";
+        int n = 0;
+        long long lastOrd = 0;
+        while( c->more() ) {
+            bo o = c->next();
+            lastOrd = o["t"].Long();
+            say(ss, o);
+            n++;            
+        }
+        if( n == 0 ) {
+            ss << rsoplog << " is empty\n";
+        }
+        else { 
+            auto_ptr<DBClientCursor> c = conn->query(rsoplog, Query().sort("$natural",-1), 20, 0, &fields);
+            string x;
+            while( c->more() ) {
+                stringstream z;
+                bo o = c->next();
+                if( o["t"].Long() == lastOrd ) 
+                    break;
+                say(z, o);
+                x = z.str() + x;
+            }
+            if( !x.empty() ) {
+                ss << "\n...\n\n" << x;
+            }
+        }
+        ss << "</pre>\n";
+    }
+
+    void ReplSetImpl::_summarizeAsHtml(stringstream& s) const { 
         s << table(0, false);
         s << tr("Set name:", _name);
         s << tr("Majority up:", elect.aMajoritySeemsToBeUp()?"yes":"no" );
@@ -117,7 +166,9 @@ namespace mongo {
         const char *h[] = {"Member", "Up", 
             "<a title=\"length of time we have been continuously connected to the other member with no reconnects\">cctime</a>", 
             "<a title=\"when this server last received a heartbeat response - includes error code responses\">Last heartbeat</a>", 
-            "Votes", "State", "Status", 0};
+            "Votes", "State", "Status", 
+            "<a title=\"how up to date this server is; write operations are sequentially numbered\">opord</a>", 
+            0};
         s << table(h);
 
         /* this is to sort the member rows by their ordinal _id, so they show up in the same 
@@ -134,6 +185,9 @@ namespace mongo {
                 td(ToString(_self->config().votes)) << 
                 td(stateAsHtml(_myState));
             s << td( _self->lhb() );
+            stringstream q;
+            q << "/_replSetOplog?" << _self->id();
+            s << td( a(q.str(), "", rsOpTime.toString()) );
             s << _tr();
 			mp[_self->hbinfo().id()] = s.str();
         }
@@ -223,7 +277,15 @@ namespace mongo {
         s << "</pre>\n";
     }
 
-    void ReplSet::summarizeStatus(BSONObjBuilder& b) const { 
+    Member* ReplSetImpl::findById(unsigned id) const { 
+        if( id == _self->id() ) return _self;
+        for( Member *m = head(); m; m = m->next() )
+            if( m->id() == id ) 
+                return m;
+        return 0;
+    }
+
+    void ReplSetImpl::_summarizeStatus(BSONObjBuilder& b) const { 
         Member *m =_members.head();
         vector<BSONObj> v;
 

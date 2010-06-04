@@ -18,7 +18,7 @@
 */
 
 #include "pch.h"
-#include "replset.h"
+#include "rs.h"
 
 namespace mongo {
 
@@ -28,7 +28,7 @@ namespace mongo {
     };
 
     /* check members OTHER THAN US to see if they think they are primary */
-    const ReplSet::Member * ReplSet::Manager::findOtherPrimary() { 
+    const Member * Manager::findOtherPrimary() { 
         Member *m = rs->head();
         Member *p = 0;
         while( m ) {
@@ -43,18 +43,19 @@ namespace mongo {
         return p;
     }
 
-    ReplSet::Manager::Manager(ReplSet *_rs) : task::Server("ReplSet::Manager"), rs(_rs), _primary(NOPRIMARY)
+    Manager::Manager(ReplSetImpl *_rs) : 
+      task::Server("Manager"), rs(_rs), _primary(NOPRIMARY)
     { 
     }
-
-    void ReplSet::Manager::noteARemoteIsPrimary(const Member *m) { 
-        if( !rs->primary() )
-            rs->_currentPrimary = m;
+ 
+    void Manager::noteARemoteIsPrimary(const Member *m) { 
+        rs->_currentPrimary = m;
         rs->_self->lhb() = "";
+        rs->_myState = RECOVERING;
     }
 
     /** called as the health threads get new results */
-    void ReplSet::Manager::msgCheckNewState() {
+    void Manager::msgCheckNewState() {
         const Member *p = rs->currentPrimary();
         const Member *p2;
         try { p2 = findOtherPrimary(); }

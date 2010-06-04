@@ -49,7 +49,6 @@ AddOption('--distmod',
           metavar='DIR',
           help='additional piece for full dist name')
 
-
 AddOption( "--64",
            dest="force64",
            type="string",
@@ -387,7 +386,8 @@ if distBuild:
 commonFiles = Split( "pch.cpp buildinfo.cpp db/common.cpp db/jsobj.cpp db/json.cpp db/lasterror.cpp db/nonce.cpp db/queryutil.cpp shell/mongo.cpp" )
 commonFiles += [ "util/background.cpp" , "util/mmap.cpp" , "util/ramstore.cpp", "util/sock.cpp" ,  "util/util.cpp" , "util/message.cpp" , 
                  "util/assert_util.cpp" , "util/httpclient.cpp" , "util/md5main.cpp" , "util/base64.cpp", "util/concurrency/vars.cpp", "util/concurrency/task.cpp", "util/debug_util.cpp",
-                 "util/concurrency/thread_pool.cpp", "util/password.cpp", "util/version.cpp" ]
+                 "util/concurrency/thread_pool.cpp", "util/password.cpp", "util/version.cpp", 
+                 "util/histogram.cpp", "util/concurrency/spin_lock.cpp", "util/text.cpp" ]
 commonFiles += Glob( "util/*.c" )
 commonFiles += Split( "client/connpool.cpp client/dbclient.cpp client/dbclientcursor.cpp client/model.cpp client/syncclusterconnection.cpp s/shardconnection.cpp" )
 
@@ -410,7 +410,7 @@ coreServerFiles = [ "util/message_server_port.cpp" , "util/message_server_asio.c
                     "client/parallel.cpp" ,  
                     "db/matcher.cpp" , "db/indexkey.cpp" , "db/dbcommands_generic.cpp" ]
 
-serverOnlyFiles = Split( "db/query.cpp db/update.cpp db/introspect.cpp db/btree.cpp db/clientcursor.cpp db/tests.cpp db/repl.cpp db/repl/replset.cpp db/repl/consensus.cpp db/repl/rs_initiate.cpp db/repl/replset_commands.cpp db/repl/manager.cpp db/repl/health.cpp db/repl/heartbeat.cpp db/repl/rs_config.cpp db/oplog.cpp db/repl_block.cpp db/btreecursor.cpp db/cloner.cpp db/namespace.cpp db/matcher_covered.cpp db/dbeval.cpp db/dbwebserver.cpp db/dbhelpers.cpp db/instance.cpp db/client.cpp db/database.cpp db/pdfile.cpp db/cursor.cpp db/security_commands.cpp db/security.cpp util/miniwebserver.cpp db/storage.cpp db/queryoptimizer.cpp db/extsort.cpp db/mr.cpp s/d_util.cpp db/cmdline.cpp" )
+serverOnlyFiles = Split( "db/query.cpp db/update.cpp db/introspect.cpp db/btree.cpp db/clientcursor.cpp db/tests.cpp db/repl.cpp db/repl/rs.cpp db/repl/consensus.cpp db/repl/rs_initiate.cpp db/repl/replset_commands.cpp db/repl/manager.cpp db/repl/health.cpp db/repl/heartbeat.cpp db/repl/rs_config.cpp db/oplog.cpp db/repl_block.cpp db/btreecursor.cpp db/cloner.cpp db/namespace.cpp db/matcher_covered.cpp db/dbeval.cpp db/dbwebserver.cpp db/dbhelpers.cpp db/instance.cpp db/client.cpp db/database.cpp db/pdfile.cpp db/cursor.cpp db/security_commands.cpp db/security.cpp util/miniwebserver.cpp db/storage.cpp db/queryoptimizer.cpp db/extsort.cpp db/mr.cpp s/d_util.cpp db/cmdline.cpp" )
 
 serverOnlyFiles += [ "db/index.cpp" ] + Glob( "db/index_*.cpp" )
 
@@ -554,8 +554,8 @@ elif os.sys.platform.startswith( "freebsd" ):
 
 elif "win32" == os.sys.platform:
     windows = True
-    if force64:
-        release = True
+    #if force64:
+    #    release = True
 
     for pathdir in env['ENV']['PATH'].split(os.pathsep):
 	if os.path.exists(os.path.join(pathdir, 'cl.exe')):
@@ -590,9 +590,10 @@ elif "win32" == os.sys.platform:
 
     boostLibs = []
 
-    env.Append( CPPPATH=[ "js/src/" ] )
+    env.Append(CPPPATH=[ "js/src/" ])
     env.Append(CPPPATH=["../js/src/"])
     env.Append(LIBPATH=["../js/src"])
+    env.Append(LIBPATH=["../js/"])
     env.Append( CPPDEFINES=[ "OLDJS" ] )
 
     winSDKHome = findVersion( [ "C:/Program Files/Microsoft SDKs/Windows/", "C:/Program Files (x86)/Microsoft SDKs/Windows/" ] ,
@@ -600,26 +601,39 @@ elif "win32" == os.sys.platform:
 
     env.Append( CPPPATH=[ boostDir , "pcre-7.4" , winSDKHome + "/Include" ] )
 
+    # consider adding /MP build with multiple processes option.
+
+    # /EHsc exception handling style for visual studio
+    # /W3 warning level
     env.Append( CPPFLAGS=" /EHsc /W3 " )
-    env.Append( CPPFLAGS=" /wd4355 /wd4800 " ) #some warnings we don't like
+
+    # some warnings we don't like:
+    env.Append( CPPFLAGS=" /wd4355 /wd4800 /wd4267 /wd4244 " )
+    
     env.Append( CPPDEFINES=["WIN32","_CONSOLE","_CRT_SECURE_NO_WARNINGS","HAVE_CONFIG_H","PCRE_STATIC","_UNICODE","UNICODE","SUPPORT_UCP","SUPPORT_UTF8,PSAPI_VERSION=1" ] )
 
     #env.Append( CPPFLAGS='  /Yu"pch.h" ' ) # this would be for pre-compiled headers, could play with it later
 
+    # docs say don't use /FD from command line
+    # /Gy funtion level linking
+    # /Gm is minimal rebuild, but may not work in parallel mode.
     if release:
         env.Append( CPPDEFINES=[ "NDEBUG" ] )
-        env.Append( CPPFLAGS= " /O2 /FD /MT /Gy /Zi /TP /errorReport:prompt /Gm " )
+        env.Append( CPPFLAGS= " /O2 /MT /Gy /Zi /TP /errorReport:none " )
         # TODO: this has caused some linking problems :
+        # /GL whole program optimization
+        # /LTCG link time code generation
         env.Append( CPPFLAGS= " /GL " ) 
         env.Append( LINKFLAGS=" /LTCG " )
     else:
         env.Append( CPPDEFINES=[ "_DEBUG" ] )
         # /Od disable optimization
         # /ZI debug info w/edit & continue 
+        # /TP it's a c++ file
         # RTC1 /GZ (Enable Stack Frame Run-Time Error Checking)
-        env.Append( CPPFLAGS=" /Od /Gm /RTC1 /MDd /ZI " )
+        env.Append( CPPFLAGS=" /Od /RTC1 /MDd /Zi /TP /errorReport:none " )
         env.Append( CPPFLAGS=' /Fd"mongod.pdb" ' )
-        env.Append( LINKFLAGS=" /incremental:yes /debug " )
+        env.Append( LINKFLAGS=" /debug " )
 
     if force64 and os.path.exists( boostDir + "/lib/vs2010_64" ):
         env.Append( LIBPATH=[ boostDir + "/lib/vs2010_64" ] )
@@ -630,7 +644,7 @@ elif "win32" == os.sys.platform:
 
     if force64:
         env.Append( LIBPATH=[ winSDKHome + "/Lib/x64" ] )
-        env.Append( LINKFLAGS=" /NODEFAULTLIB:MSVCPRT  /NODEFAULTLIB:MSVCRT " )
+        #env.Append( LINKFLAGS=" /NODEFAULTLIB:MSVCPRT  /NODEFAULTLIB:MSVCRT " )
     else:
         env.Append( LIBPATH=[ winSDKHome + "/Lib" ] )
 
@@ -657,17 +671,21 @@ elif "win32" == os.sys.platform:
     winLibString = "ws2_32.lib kernel32.lib advapi32.lib Psapi.lib"
 
     if force64:
-        winLibString += " LIBCMT LIBCPMT "
+        
+        winLibString += ""
+        #winLibString += " LIBCMT LIBCPMT "
+
     else:
         winLibString += " user32.lib gdi32.lib winspool.lib comdlg32.lib  shell32.lib ole32.lib oleaut32.lib "
         winLibString += " odbc32.lib odbccp32.lib uuid.lib "
 
     env.Append( LIBS=Split(winLibString) )
 
-    if force64:
-        env.Append( CPPDEFINES=["_AMD64_=1"] )
-    else:
-        env.Append( CPPDEFINES=["_X86_=1"] )
+    # dm these should automatically be defined by the compiler. commenting out to see if works. jun2010
+    #if force64:
+    #    env.Append( CPPDEFINES=["_AMD64_=1"] )
+    #else:
+    #    env.Append( CPPDEFINES=["_X86_=1"] )
 
     env.Append( CPPPATH=["../winpcap/Include"] )
     env.Append( LIBPATH=["../winpcap/Lib"] )
@@ -917,7 +935,16 @@ def doConfigure( myenv , needPcre=True , shell=False ):
 
     if usesm:
 
-        myCheckLib( [ "mozjs" , "js", "js_static" ] , True )
+        # see http://www.mongodb.org/pages/viewpageattachments.action?pageId=12157032
+        J = [ "mozjs" , "js", "js_static" ]
+        if windows and msarch == "amd64":
+            if release:
+                J = [ "js64r", "js", "mozjs" , "js_static" ]
+            else:
+                J = "js64d"
+                print( "will use js64d.lib for spidermonkey. (available at mongodb.org prebuilt.)" );
+
+        myCheckLib( J , True )
         mozHeader = "js"
         if bigLibString(myenv).find( "mozjs" ) >= 0:
             mozHeader = "mozjs"

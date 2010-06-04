@@ -1,4 +1,4 @@
-// message.h
+// Message.h
 
 /*    Copyright 2009 10gen Inc.
  *
@@ -57,6 +57,12 @@ namespace mongo {
         
         virtual HostAndPort remote() const = 0;
         virtual unsigned remotePort() const = 0;
+
+        virtual int getClientId(){
+            int x = remotePort();
+            x = x << 16;
+            return x;
+        }
     };
 
     class MessagingPort : public AbstractMessagingPort {
@@ -212,6 +218,18 @@ namespace mongo {
         }
 
         bool empty() const { return !_buf && _data.empty(); }
+
+        int size() const{
+            int res = 0;
+            if ( _buf ){
+                res =  _buf->len;
+            } else {
+                for (MsgVec::const_iterator it = _data.begin(); it != _data.end(); ++it){
+                    res += it->second;
+                }
+            }
+            return res;
+        }
         
         // concat multiple buffers - noop if <2 buffers already, otherwise can be expensive copy
         // can get rid of this if we make response handling smarter
@@ -316,7 +334,7 @@ namespace mongo {
                 p.send( _data, context );
             }
         }
-        
+
     private:
         void _setData( MsgData *d, bool freeIt ) {
             _freeIt = freeIt;
@@ -325,7 +343,8 @@ namespace mongo {
         // if just one buffer, keep it in _buf, otherwise keep a sequence of buffers in _data
         MsgData * _buf;
         // byte buffer(s) - the first must contain at least a full MsgData unless using _buf for storage instead
-        vector< pair< char*, int > > _data;
+        typedef vector< pair< char*, int > > MsgVec;
+        MsgVec _data;
         bool _freeIt;
     };
 

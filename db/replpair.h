@@ -22,7 +22,7 @@
 #include "../client/dbclient.h"
 #include "repl.h"
 #include "cmdline.h"
-#include "repl/replset.h"
+#include "repl/rs.h"
 
 namespace mongo {
 
@@ -218,7 +218,7 @@ namespace mongo {
             BSONObj o = fromjson("{\"initialsynccomplete\":1}");
             Helpers::putSingleton("local.pair.sync", o);
             initialsynccomplete = 1;
-            log() << "pair: initial sync complete" << endl;
+            tlog() << "pair: initial sync complete" << endl;
         }
 
         void setInitialSyncCompletedLocking() {
