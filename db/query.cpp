@@ -769,83 +769,89 @@ namespace mongo {
     };
     
     /* run a query -- includes checking for and running a Command */
-    void runQuery(Message& m, QueryMessage& q, CurOp& curop, Message &result) {
+    bool runQuery(Message& m, QueryMessage& q, CurOp& curop, Message &result) {
         StringBuilder& ss = curop.debug().str;
         shared_ptr<ParsedQuery> pq_shared( new ParsedQuery(q) );
         ParsedQuery& pq( *pq_shared );
-        const char *ns = q.ns;
         int ntoskip = q.ntoskip;
         BSONObj jsobj = q.query;
         int queryOptions = q.queryOptions;
-        BSONObj snapshotHint;
+        const char *ns = q.ns;
         
         if( logLevel >= 2 )
             log() << "query: " << ns << jsobj << endl;
         
-        long long nscanned = 0;
         ss << ns;
         {
-            // only insert if nonzero. 
+            // only say ntoreturn if nonzero. 
             int n =  pq.getNumToReturn();
             if( n ) 
                 ss << " ntoreturn:" << n;
         }
         curop.setQuery(jsobj);
         
-        BSONObjBuilder cmdResBuf;
-        long long cursorid = 0;
-        
-        int n = 0;
-        
-        Client& c = cc();
-
-        if ( pq.couldBeCommand() ){
+        if ( pq.couldBeCommand() ) {
             BufBuilder bb;
             bb.skip(sizeof(QueryResult));
-
+            BSONObjBuilder cmdResBuf;
             if ( runCommands(ns, jsobj, curop, bb, cmdResBuf, false, queryOptions) ) {
                 ss << " command: " << jsobj;
                 curop.markCommand();
-                n = 1;
                 auto_ptr< QueryResult > qr;
                 qr.reset( (QueryResult *) bb.buf() );
                 bb.decouple();
                 qr->setResultFlagsToOk();
                 qr->len = bb.len();
                 ss << " reslen:" << bb.len();
-                //	qr->channel = 0;
                 qr->setOperation(opReply);
-                qr->cursorId = cursorid;
+                qr->cursorId = 0;
                 qr->startingFrom = 0;
-                qr->nReturned = n;
+                qr->nReturned = 1;
                 result.setData( qr.release(), true );
             }
-            return;
+            return false;
         }
         
-        // regular query
+        /* --- regular query --- */
 
-        mongolock lk(false); // read lock
+        int n = 0;
+        BSONElement hint = useHints ? pq.getHint() : BSONElement();
+        bool explain = pq.isExplain();
+        bool snapshot = pq.isSnapshot();
+        BSONObj order = pq.getOrder();
+        BSONObj query = pq.getFilter();
+
+        /* The ElemIter will not be happy if this isn't really an object. So throw exception
+           here when that is true.
+           (Which may indicate bad data from client.)
+        */
+        if ( query.objsize() == 0 ) {
+            out() << "Bad query object?\n  jsobj:";
+            out() << jsobj.toString() << "\n  query:";
+            out() << query.toString() << endl;
+            uassert( 10110 , "bad query object", false);
+        }
+            
+        /* --- read lock --- */
+
+        mongolock lk(false);
+
         Client::Context ctx( ns , dbpath , &lk );
 
         replVerifyReadsOk(pq);
 
-        BSONElement hint = useHints ? pq.getHint() : BSONElement();
-        bool explain = pq.isExplain();
-        bool snapshot = pq.isSnapshot();
-        BSONObj query = pq.getFilter();
-        BSONObj order = pq.getOrder();
-
         if ( pq.hasOption( QueryOption_CursorTailable ) ) {
             NamespaceDetails *d = nsdetails( ns );
             uassert( 13051, "tailable cursor requested on non capped collection", d && d->capped );
+            const BSONObj nat1 = BSON( "$natural" << 1 );
             if ( order.isEmpty() ) {
-                order = BSON( "$natural" << 1 );
+                order = nat1;
             } else {
-                uassert( 13052, "only {$natural:1} order allowed for tailable cursor", order == BSON( "$natural" << 1 ) );
+                uassert( 13052, "only {$natural:1} order allowed for tailable cursor", order == nat1 );
             }
         }
         
+        BSONObj snapshotHint; // put here to keep the data in scope
         if( snapshot ) { 
             NamespaceDetails *d = nsdetails(ns);
             if ( d ){
@@ -867,24 +873,12 @@ namespace mongo {
             }
         }
             
-        /* The ElemIter will not be happy if this isn't really an object. So throw exception
-           here when that is true.
-           (Which may indicate bad data from client.)
-        */
-        if ( query.objsize() == 0 ) {
-            out() << "Bad query object?\n  jsobj:";
-            out() << jsobj.toString() << "\n  query:";
-            out() << query.toString() << endl;
-            uassert( 10110 , "bad query object", false);
-        }
-            
         if ( ! (explain || pq.showDiskLoc()) && isSimpleIdQuery( query ) && !pq.hasOption( QueryOption_CursorTailable ) ) {
-            nscanned = 1;
-
             bool nsFound = false;
             bool indexFound = false;
 
             BSONObj resObject;
+            Client& c = cc();
             bool found = Helpers::findById( c, ns , query , resObject , &nsFound , &indexFound );
             if ( nsFound == false || indexFound == true ){
                 BufBuilder bb(sizeof(QueryResult)+resObject.objsize()+32);
@@ -902,11 +896,11 @@ namespace mongo {
                 qr->len = bb.len();
                 ss << " reslen:" << bb.len();
                 qr->setOperation(opReply);
-                qr->cursorId = cursorid;
+                qr->cursorId = 0;
                 qr->startingFrom = 0;
                 qr->nReturned = n;      
                 result.setData( qr.release(), true );
-                return;
+                return false;
             }     
         }
         
@@ -935,11 +929,14 @@ namespace mongo {
             dqo.finishExplain( explainSuffix );
         }
         n = dqo.n();
-        nscanned = dqo.nscanned();
+        long long nscanned = dqo.nscanned();
         if ( dqo.scanAndOrderRequired() )
             ss << " scanAndOrder ";
         shared_ptr<Cursor> cursor = dqo.cursor();
-        log( 5 ) << "   used cursor: " << cursor.get() << endl;
+        if( logLevel >= 5 )
+            log() << "   used cursor: " << cursor.get() << endl;
+        long long cursorid = 0;
+        bool exhaust = false;
         if ( dqo.saveClientCursor() || mps->mayRunMore() ) {
             ClientCursor *cc;
             bool moreClauses = mps->mayRunMore();
@@ -952,17 +949,15 @@ namespace mongo {
             }
             cursorid = cc->cursorid;
             cc->query = jsobj.getOwned();
-            DEV tlog() << "  query has more, cursorid: " << cursorid << endl;
+            DEV tlog() << "query has more, cursorid: " << cursorid << endl;
             cc->pos = n;
             cc->pq = pq_shared;
             cc->fields = pq.getFieldPtr();
             cc->originalMessage = m;
             cc->updateLocation();
-            if ( !cc->c->ok() && cc->c->tailable() ) {
-                DEV tlog() << "  query has no more but tailable, cursorid: " << cursorid << endl;
-            } else {
-                DEV tlog() << "  query has more, cursorid: " << cursorid << endl;
-            }
+            if ( !cc->c->ok() && cc->c->tailable() )
+                DEV tlog() << "query has no more but tailable, cursorid: " << cursorid << endl;
+            exhaust = queryOptions & QueryOption_Exhaust;
         }
 
         QueryResult *qr = (QueryResult *) result.header();
@@ -985,7 +980,7 @@ namespace mongo {
             ss << jsobj << ' ';
         }
         ss << " nreturned:" << n;
-        return;
+        return exhaust;
     }    
     
 } // namespace mongo

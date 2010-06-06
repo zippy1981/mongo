@@ -317,6 +317,10 @@
 					RelativePath="..\util\text.h"
 					>
 				</File>
+				<File
+					RelativePath="..\util\version.h"
+					>
+				</File>
 			</Filter>
 		</Filter>
 		<Filter

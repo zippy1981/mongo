@@ -184,10 +184,6 @@
 			Name="libs"
 			>
 			<File
-				RelativePath=".\db.rc"
-				>
-			</File>
-			<File
 				RelativePath="..\..\js\src\js.lib"
 				>
 			</File>
