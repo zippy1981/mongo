@@ -1,5 +1,4 @@
-﻿<<<<<<< HEAD
-﻿<?xml version="1.0" encoding="utf-8"?>
+﻿﻿<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="Debug|Win32">
@@ -558,6 +557,9 @@
   <ItemGroup>
     <None Include="..\SConstruct" />
     <None Include="..\util\mongoutils\README" />
+    <None Include="ClassDiagram1.cd" />
+    <None Include="ClassDiagram2.cd" />
+    <None Include="ClassDiagram3.cd" />
     <None Include="mongo.ico" />
     <None Include="readme.txt" />
     <None Include="repl\notes.txt" />
@@ -714,5 +716,4 @@
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
->>>>>>> 6e8fafab5871d442318d8deeda57555eae54a797
 </Project>
