@@ -16,7 +16,6 @@
  */
 
 #include "pch.h"
-
 #include <stdio.h>
 
 #ifdef USE_READLINE
@@ -37,6 +36,11 @@ jmp_buf jbuf;
 using namespace std;
 using namespace boost::filesystem;
 
+using mongo::BSONObj;
+using mongo::BSONObjBuilder;
+using mongo::BSONObjIterator;
+using mongo::BSONElement;
+
 string historyFile;
 bool gotInterrupted = 0;
 bool inMultiLine = 0;
@@ -45,9 +49,62 @@ bool inMultiLine = 0;
 #define CTRLC_HANDLE
 #endif
 
-static char** my_completion(const char* text , int start ,int end ){
-    cout << "YO [" << text << "] " << start << " " << end << endl;
-    return 0;
+mongo::Scope * shellMainScope;
+
+void generateCompletions( const string& prefix , vector<string>& all ){
+    if ( prefix.find( '"' ) != string::npos )
+        return;
+    shellMainScope->exec( "shellAutocomplete( \"" + prefix + "\" );" , "autocomplete help" , false , true , false );
+    
+    BSONObjBuilder b;
+    shellMainScope->append( b , "" , "__autocomplete__" );
+    BSONObj res = b.obj();
+    BSONObj arr = res.firstElement().Obj();
+
+    BSONObjIterator i(arr);
+    while ( i.more() ){
+        BSONElement e = i.next();
+        all.push_back( e.String() );
+    }
+
+}
+
+static char** completionHook(const char* text , int start ,int end ){
+    static map<string,string> m;
+    
+    vector<string> all;
+    
+    if ( start == 0 ){
+        generateCompletions( string(text,end) , all );
+    }
+    
+    if ( all.size() == 0 ){
+#ifdef USE_READLINE
+        rl_bind_key('\t',0);
+#endif
+        return 0;
+    }
+    
+    string longest = all[0];
+    for ( vector<string>::iterator i=all.begin(); i!=all.end(); ++i ){
+        string s = *i;
+        for ( unsigned j=0; j<s.size(); j++ ){
+            if ( longest[j] == s[j] )
+                continue;
+            longest = longest.substr(0,j);
+            break;
+        }
+    }
+    
+    char ** matches = (char**)malloc( sizeof(char*) * (all.size()+2) );
+    unsigned x=0;
+    matches[x++] = strdup( longest.c_str() );
+    for ( unsigned i=0; i<all.size(); i++ ){
+        matches[x++] = strdup( all[i].c_str() );
+    }
+    matches[x++] = 0;
+
+    return matches;
 }
 
 void shellHistoryInit(){
@@ -61,12 +118,11 @@ void shellHistoryInit(){
 
     using_history();
     read_history( historyFile.c_str() );
-
-    // TODO: do auto-completion
-    //rl_attempted_completion_function = my_completion;
+    
+    rl_attempted_completion_function = completionHook;
         
 #else
-    cout << "type \"exit\" to exit" << endl;
+    //cout << "type \"exit\" to exit" << endl;
 #endif
 }
 void shellHistoryDone(){
@@ -121,6 +177,9 @@ void quitNicely( int sig ){
 char * shellReadline( const char * prompt , int handlesigint = 0 ){
 #ifdef USE_READLINE
 
+    rl_bind_key('\t',rl_complete);
+
+
 #ifdef CTRLC_HANDLE
     if ( ! handlesigint )
         return readline( prompt );
@@ -137,7 +196,7 @@ char * shellReadline( const char * prompt , int handlesigint = 0 ){
     signal( SIGINT , quitNicely );
     return ret;
 #else
-    printf("%s", prompt);
+    printf("%s", prompt); cout.flush();
     char * buf = new char[1024];
     char * l = fgets( buf , 1024 , stdin );
     int len = strlen( buf );
@@ -298,7 +357,12 @@ bool fileExists( string file ){
     }
 }
 
+namespace mongo {
+    extern bool isShell;
+}
+
 int _main(int argc, char* argv[]) {
+    mongo::isShell = true;
     setupSignals();
 
     mongo::shellUtils::RecordMyLocation( argv[ 0 ] );
@@ -432,7 +496,7 @@ int _main(int argc, char* argv[]) {
     mongo::UnitTest::runTests();
 
     if ( !nodb ) { // connect to db
-        if ( ! mongo::cmdLine.quiet ) cout << "url: " << url << endl;
+        //if ( ! mongo::cmdLine.quiet ) cout << "url: " << url << endl;
         
         stringstream ss;
         if ( mongo::cmdLine.quiet )
@@ -458,6 +522,7 @@ int _main(int argc, char* argv[]) {
     mongo::ScriptEngine::setup();
     mongo::globalScriptEngine->setScopeInitCallback( mongo::shellUtils::initScope );
     auto_ptr< mongo::Scope > scope( mongo::globalScriptEngine->newScope() );    
+    shellMainScope = scope.get();
     
     if ( !script.empty() ) {
         mongo::shellUtils::MongoProgramScope s;

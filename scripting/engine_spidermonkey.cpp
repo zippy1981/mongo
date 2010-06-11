@@ -16,8 +16,7 @@
  */
 
 #include "pch.h"
-#include "engine_spidermonkey.h"
-
+#include "engine_spidermonkey.h"5
 #include "../client/dbclient.h"
 
 #ifndef _WIN32
@@ -603,7 +602,9 @@ namespace mongo {
             }
             case Code:{
                 JSFunction * func = compileFunction( e.valuestr() );
-                return OBJECT_TO_JSVAL( JS_GetFunctionObject( func ) );
+                if ( func )
+                    return OBJECT_TO_JSVAL( JS_GetFunctionObject( func ) );
+                return JSVAL_NULL;
             }
             case CodeWScope:{
                 JSFunction * func = compileFunction( e.codeWScopeCode() );
@@ -1371,6 +1372,15 @@ namespace mongo {
             JSBool worked = JS_EvaluateScript( _context , _global , code.c_str() , strlen( code.c_str() ) , name.c_str() , 0 , &ret );
             uninstallCheckTimeout( timeoutMs );
 
+            if ( ! worked && _error.size() == 0 ){
+                jsval v;
+                if ( JS_GetPendingException( _context , &v ) ){
+                    _error = _convertor->toString( v );
+                    if ( reportError )
+                        cout << _error << endl;
+                }
+            }
+
             if ( assertOnError )
                 uassert( 10228 ,  name + " exec failed" , worked );
 
@@ -1486,9 +1496,14 @@ namespace mongo {
         
     };
 
+    /* used to make the logging not overly chatty in the mongo shell. */
+    bool isShell = false;
+
     void errorReporter( JSContext *cx, const char *message, JSErrorReport *report ){
         stringstream ss;
-        ss << "JS Error: " << message;
+        if( !isShell ) 
+            ss << "JS Error: ";
+        ss << message;
 
         if ( report && report->filename ){
             ss << " " << report->filename << ":" << report->lineno;
@@ -1508,10 +1523,10 @@ namespace mongo {
 
         for ( uintN i=0; i<argc; i++ ){
             string filename = c.toString( argv[i] );
-            cout << "should load [" << filename << "]" << endl;
+            //cout << "load [" << filename << "]" << endl;
 
             if ( ! s->execFile( filename , false , true , false ) ){
-                JS_ReportError( cx , ((string)"error loading file: " + filename ).c_str() );
+                JS_ReportError( cx , ((string)"error loading js file: " + filename ).c_str() );
                 return JS_FALSE;
             }
         }

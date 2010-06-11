@@ -28,6 +28,7 @@ namespace mongo {
             return _bound.woCompare( other._bound ) == 0 &&
             _inclusive == other._inclusive;
         }
+        void flipInclusive() { _inclusive = !_inclusive; }
     };
 
     struct FieldInterval {
@@ -42,6 +43,7 @@ namespace mongo {
             int cmp = _lower._bound.woCompare( _upper._bound, false );
             return ( cmp < 0 || ( cmp == 0 && _lower._inclusive && _upper._inclusive ) );
         }
+        bool equality() const { return _lower._inclusive && _upper._inclusive && _lower._bound.woCompare( _upper._bound, false ) == 0; }
     };
 
     // range of a field's value that may be determined from query -- used to
@@ -74,7 +76,15 @@ namespace mongo {
         bool empty() const { return _intervals.empty(); }
 		const vector< FieldInterval > &intervals() const { return _intervals; }
         string getSpecial() const { return _special; }
-
+        void setExclusiveBounds() {
+            for( vector< FieldInterval >::iterator i = _intervals.begin(); i != _intervals.end(); ++i ) {
+                i->_lower._inclusive = false;
+                i->_upper._inclusive = false;
+            }
+        }
+        // reconstructs $in, regex, inequality matches
+        // this is a hack - we should submit FieldRange directly to a Matcher instead
+        BSONObj simplifiedComplex() const;
     private:
         BSONObj addObj( const BSONObj &o );
         void finishOperation( const vector< FieldInterval > &newIntervals, const FieldRange &other );
@@ -161,11 +171,20 @@ namespace mongo {
     public:
         friend class FieldRangeOrSet;
         FieldRangeSet( const char *ns, const BSONObj &query , bool optimize=true );
+        bool hasRange( const char *fieldName ) const {
+            map< string, FieldRange >::const_iterator f = _ranges.find( fieldName );
+            return f != _ranges.end();
+        }
         const FieldRange &range( const char *fieldName ) const {
             map< string, FieldRange >::const_iterator f = _ranges.find( fieldName );
             if ( f == _ranges.end() )
                 return trivialRange();
-            return f->second;
+            return f->second;            
+        }
+        FieldRange &range( const char *fieldName ) {
+            map< string, FieldRange >::iterator f = _ranges.find( fieldName );
+            massert( 13293, "no such range", f != _ranges.end() );
+            return f->second;            
         }
         int nNontrivialRanges() const {
             int count = 0;
@@ -176,7 +195,7 @@ namespace mongo {
         }
         const char *ns() const { return _ns; }
         // if fields is specified, order fields of returned object to match those of 'fields'
-        BSONObj simplifiedQuery( const BSONObj &fields = BSONObj() ) const;
+        BSONObj simplifiedQuery( const BSONObj &fields = BSONObj(), bool expandIn = false ) const;
         bool matchPossible() const {
             for( map< string, FieldRange >::const_iterator i = _ranges.begin(); i != _ranges.end(); ++i )
                 if ( i->second.empty() )
@@ -187,22 +206,29 @@ namespace mongo {
         BoundList indexBounds( const BSONObj &keyPattern, int direction ) const;
         string getSpecial() const;
         const FieldRangeSet &operator-=( const FieldRangeSet &other ) {
-            for( map< string, FieldRange >::const_iterator i = other._ranges.begin();
-                i != other._ranges.end(); ++i ) {
-                map< string, FieldRange >::iterator f = _ranges.find( i->first.c_str() );
-                if ( f != _ranges.end() )
-                    f->second -= i->second;
-            }
-            return *this;
-        }
-        const FieldRangeSet &operator&=( const FieldRangeSet &other ) {
-            map< string, FieldRange >::const_iterator i = _ranges.begin();
+            map< string, FieldRange >::iterator i = _ranges.begin();
             map< string, FieldRange >::const_iterator j = other._ranges.begin();
             while( i != _ranges.end() && j != other._ranges.end() ) {
                 int cmp = i->first.compare( j->first );
                 if ( cmp == 0 ) {
-                    // TODO possible to update _ranges using i iterator?
-                    _ranges[ i->first ] &= j->second;
+                    i->second -= j->second;
+                    ++i;
+                    ++j;
+                } else if ( cmp < 0 ) {
+                    ++i;
+                } else {
+                    ++j;
+                }
+            }
+            return *this;
+        }
+        const FieldRangeSet &operator&=( const FieldRangeSet &other ) {
+            map< string, FieldRange >::iterator i = _ranges.begin();
+            map< string, FieldRange >::const_iterator j = other._ranges.begin();
+            while( i != _ranges.end() && j != other._ranges.end() ) {
+                int cmp = i->first.compare( j->first );
+                if ( cmp == 0 ) {
+                    i->second &= j->second;
                     ++i;
                     ++j;
                 } else if ( cmp < 0 ) {
@@ -233,31 +259,35 @@ namespace mongo {
     class FieldRangeOrSet {
     public:
         FieldRangeOrSet( const char *ns, const BSONObj &query , bool optimize=true );
-        // if there's a trivial or clause, we won't use or ranges to help with scanning
-//        bool trivialOr() const {
-//            for( list< FieldRangeSet >::const_iterator i = _orSets.begin(); i != _orSets.end(); ++i ) {
-//                if ( i->nNontrivialRanges() == 0 ) {
-//                    return true;
-//                }
-//            }
-//            return false;
-//        }
+        // if there's a useless or clause, we won't use or ranges to help with scanning
         bool orFinished() const { return _orFound && _orSets.empty(); }
         // removes first or clause, and removes the field ranges it covers from all subsequent or clauses
         // this could invalidate the result of the last topFrs()
-        void popOrClause() {
+        void popOrClause( const char *firstField, const char *secondField ) {
             massert( 13274, "no or clause to pop", !orFinished() );
-//            const FieldRangeSet &toPop = _orSets.front();
-//            list< FieldRangeSet >::iterator i = _orSets.begin();
-//            ++i;
-//            while( i != _orSets.end() ) {
-//                *i -= toPop;
-//                if( !i->matchPossible() ) {
-//                    i = _orSets.erase( i );
-//                } else {
-//                    ++i;
-//                }
-//            }
+            const FieldRangeSet &toPop = _orSets.front();
+            if ( toPop.hasRange( firstField ) ) {
+                if ( secondField && toPop.hasRange( secondField ) ) {
+                    // modifying existing front is ok - this is the last time we'll use it
+                    _orSets.front().range( firstField ).setExclusiveBounds();
+                }
+                const FieldRange &r = toPop.range( firstField );
+                list< FieldRangeSet >::iterator i = _orSets.begin();
+                ++i;
+                while( i != _orSets.end() ) {
+                    if ( i->hasRange( firstField ) ) {
+                        i->range( firstField ) -= r;
+                        if( !i->matchPossible() ) {
+                            i = _orSets.erase( i );
+                        } else {    
+                            ++i;
+                        }
+                    } else {
+                        ++i;
+                    }
+                }
+            }
+            _oldOrSets.push_front( toPop );
             _orSets.pop_front();
         }
         FieldRangeSet *topFrs() const {
@@ -265,9 +295,16 @@ namespace mongo {
             *ret &= _orSets.front();
             return ret;
         }
+        void allClausesSimplified( vector< BSONObj > &ret ) const {
+            for( list< FieldRangeSet >::const_iterator i = _orSets.begin(); i != _orSets.end(); ++i ) {
+                ret.push_back( i->simplifiedQuery() );
+            }
+        }
+        string getSpecial() const { return _baseSet.getSpecial(); }
     private:
         FieldRangeSet _baseSet;
         list< FieldRangeSet > _orSets;
+        list< FieldRangeSet > _oldOrSets; // make sure memory is owned
         bool _orFound;
     };
     

@@ -32,6 +32,10 @@ assert = function( b , msg ){
     doassert( "assert failed : " + msg );
 }
 
+assert.automsg = function( b ) {
+    assert( eval( b ), b );
+}
+
 assert._debug = false;
 
 assert.eq = function( a , b , msg ){
@@ -58,6 +62,30 @@ assert.neq = function( a , b , msg ){
     doassert( "[" + a + "] != [" + b + "] are equal : " + msg );
 }
 
+assert.repeat = function( f, msg, timeout, interval ) {
+    if ( assert._debug && msg ) print( "in assert for: " + msg );
+
+    var start = new Date();
+    timeout = timeout || 30000;
+    interval = interval || 200;
+    var last;
+    while( 1 ) {
+        
+        if ( typeof( f ) == "string" ){
+            if ( eval( f ) )
+                return;
+        }
+        else {
+            if ( f() )
+                return;
+        }
+        
+        if ( ( new Date() ).getTime() - start.getTime() > timeout )
+            break;
+        sleep( interval );
+    }
+}
+    
 assert.soon = function( f, msg, timeout, interval ) {
     if ( assert._debug && msg ) print( "in assert for: " + msg );
 
@@ -92,6 +120,10 @@ assert.throws = function( func , params , msg ){
     }
 
     doassert( "did not throw exception: " + msg );
+}
+
+assert.throws.automsg = function( func, params ) {
+    assert.throws( func, params, func.toString() );
 }
 
 assert.commandWorked = function( res , msg ){
@@ -592,6 +624,10 @@ if ( typeof _threadInject != "undefined" ){
     }
 }
 
+tojsononeline = function( x ){
+    return tojson( x , " " , true );
+}
+
 tojson = function( x, indent , nolint ){
     if ( x === null )
         return "null";
@@ -602,8 +638,7 @@ tojson = function( x, indent , nolint ){
     if (!indent) 
         indent = "";
 
-    switch ( typeof x ){
-        
+    switch ( typeof x ) {
     case "string": {
         var s = "\"";
         for ( var i=0; i<x.length; i++ ){
@@ -615,11 +650,9 @@ tojson = function( x, indent , nolint ){
         }
         return s + "\"";
     }
-        
     case "number": 
     case "boolean":
         return "" + x;
-            
     case "object":{
         var s = tojsonObject( x, indent , nolint );
         if ( ( nolint == null || nolint == true ) && s.length < 80 && ( indent == null || indent.length == 0 ) ){
@@ -627,11 +660,8 @@ tojson = function( x, indent , nolint ){
         }
         return s;
     }
-        
     case "function":
         return x.toString();
-        
-
     default:
         throw "tojson can't handle type " + ( typeof x );
     }
@@ -715,6 +745,10 @@ printjson = function(x){
     print( tojson( x ) );
 }
 
+printjsononeline = function(x){
+    print( tojsononeline( x ) );
+}
+
 shellPrintHelper = function( x ){
 
     if ( typeof( x ) == "undefined" ){
@@ -750,6 +784,13 @@ shellPrintHelper = function( x ){
         print( tojson( x ) );
 }
 
+shellAutocomplete = function( prefix ){
+    var a = [];
+    //a.push( prefix + "z" )
+    //a.push( prefix + "y" )
+    __autocomplete__ = a;
+}
+
 shellHelper = function( command , rest , shouldPrint ){
     command = command.trim();
     var args = rest.trim().replace(/;$/,"").split( "\s+" );
@@ -764,18 +805,40 @@ shellHelper = function( command , rest , shouldPrint ){
     return res;
 }
 
-help = shellHelper.help = function(){
-    print( "HELP" );
-    print( "\t" + "show dbs                     show database names");
-    print( "\t" + "show collections             show collections in current database");
-    print( "\t" + "show users                   show users in current database");
-    print( "\t" + "show profile                 show most recent system.profile entries with time >= 1ms");
-    print( "\t" + "use <db name>                set curent database to <db name>" );
-    print( "\t" + "db.help()                    help on DB methods");
-    print( "\t" + "db.foo.help()                help on collection methods");
-    print( "\t" + "db.foo.find()                list objects in collection foo" );
-    print( "\t" + "db.foo.find( { a : 1 } )     list objects in foo where a == 1" );
-    print( "\t" + "it                           result of the last line evaluated; use to further iterate");
+help = shellHelper.help = function (x) {
+    if (x == "admin") {
+        print("\tls([path])                    list files");
+        print("\tpwd()                         returns current directory");
+        print("\tlistFiles([path])             returns file list");
+        print("\thostname()                    returns name of this host");
+        print("\tremoveFile(f)                 delete a file");
+        print("\tload(jsfilename)              load and execute a .js file");
+        print("\trun(program[, args...])       spawn a program and wait for its completion");
+        print("\tsleep(m)                      sleep m milliseconds");
+        return;
+    }
+    if (x == "test") {
+        print("\tstartMongodEmpty(args)        DELETES DATA DIR and then starts mongod");
+        print("\t                              returns a connection to the new server");
+        print("\tstartMongodTest()             DELETES DATA DIR");
+        print("\t                              automatically picks port #s starting at 27000 and increasing");
+        print("\t                              or you can specify the port as the first arg");
+        print("\t                              dir is /data/db/<port>/ if not specified as the 2nd arg");
+        print("\t                              returns a connection to the new server");
+        return;
+    }
+    print("\t" + "help admin                   misc shell commands");
+    print("\t" + "show dbs                     show database names");
+    print("\t" + "show collections             show collections in current database");
+    print("\t" + "show users                   show users in current database");
+    print("\t" + "show profile                 show most recent system.profile entries with time >= 1ms");
+    print("\t" + "use <db name>                set curent database to <db name>");
+    print("\t" + "db.help()                    help on DB methods");
+    print("\t" + "db.foo.help()                help on collection methods");
+    print("\t" + "db.foo.find()                list objects in collection foo");
+    print("\t" + "db.foo.find( { a : 1 } )     list objects in foo where a == 1");
+    print("\t" + "it                           result of the last line evaluated; use to further iterate");
+    print("\t" + "exit                         quit the mongo shell");
 }
 
 shellHelper.use = function( dbname ){

@@ -443,31 +443,107 @@ namespace mongo {
     }
     
     const FieldRange &FieldRange::operator-=( const FieldRange &other ) {
-        // TODO implement
-        return *this;
-        
-        vector< FieldInterval > newIntervals;
-        vector< FieldInterval >::const_iterator i = _intervals.begin();
+        vector< FieldInterval >::iterator i = _intervals.begin();
         vector< FieldInterval >::const_iterator j = other._intervals.begin();
         while( i != _intervals.end() && j != other._intervals.end() ) {
             int cmp = i->_lower._bound.woCompare( j->_lower._bound, false );
-            if ( cmp < 0 ) {
+            if ( cmp < 0 ||
+                ( cmp == 0 && i->_lower._inclusive && !j->_lower._inclusive ) ) {
                 int cmp2 = i->_upper._bound.woCompare( j->_lower._bound, false );
                 if ( cmp2 < 0 ) {
-                    
+                    ++i;
+                } else if ( cmp2 == 0 ) {
+                    if ( i->_upper._inclusive && j->_lower._inclusive ) {
+                        i->_upper._inclusive = false;
+                    }
+                    ++i;
+                } else {
+                    int cmp3 = i->_upper._bound.woCompare( j->_upper._bound, false );
+                    if ( cmp3 < 0 ||
+                        ( cmp3 == 0 && ( !i->_upper._inclusive || j->_upper._inclusive ) ) ) {
+                        i->_upper = j->_lower;
+                        i->_upper.flipInclusive();
+                        ++i;
+                    } else {
+                        ++j;
+                    }
                 }
+            } else {
+                int cmp2 = i->_lower._bound.woCompare( j->_upper._bound, false );
+                if ( cmp2 > 0 ||
+                    ( cmp2 == 0 && ( !i->_lower._inclusive || !j->_lower._inclusive ) ) ) {
+                    ++j;
+                } else {
+                    int cmp3 = i->_upper._bound.woCompare( j->_upper._bound, false );
+                    if ( cmp3 < 0 ||
+                        ( cmp3 == 0 && ( !i->_upper._inclusive || j->_upper._inclusive ) ) ) {
+                        i = _intervals.erase( i );
+                    } else {
+                        i->_lower = j->_upper;
+                        i->_lower.flipInclusive();                        
+                        ++j;
+                    }
+                }                
             }
         }
-        while( i != _intervals.end() ) {
-            newIntervals.push_back( *i );
-        }
-        finishOperation( newIntervals, other );
+        finishOperation( _intervals, other );
         return *this;        
     }
     
     BSONObj FieldRange::addObj( const BSONObj &o ) {
         _objData.push_back( o );
         return o;
+    }
+    
+    BSONObj FieldRange::simplifiedComplex() const {
+        BSONObjBuilder bb;
+        BSONArrayBuilder a;
+        set< string > regexLow;
+        set< string > regexHigh;
+        for( vector< FieldInterval >::const_iterator i = _intervals.begin(); i != _intervals.end(); ++i ) {
+            // this recovers exact $in fields and regexes - should be everything for equality
+            if ( i->equality() ) {
+                a << i->_upper._bound;
+                // right now btree cursor doesn't do exclusive bounds so we need to match end of the regex range
+                if ( i->_upper._bound.type() == RegEx ) {
+                    string r = simpleRegex( i->_upper._bound );
+                    regexLow.insert( r );
+                    string re = simpleRegexEnd( r );
+                    regexHigh.insert( re );
+                    a << re;
+                }
+            }
+        }
+        BSONArray in = a.arr();
+        if ( !in.isEmpty() ) {
+            bb << "$in" << in;
+        }
+        BSONObj low;
+        BSONObj high;
+        // should only be one non regex ineq range
+        for( vector< FieldInterval >::const_iterator i = _intervals.begin(); i != _intervals.end(); ++i ) {
+            if ( !i->equality() ) {
+                if ( !i->_lower._inclusive || i->_lower._bound.type() != String || !regexLow.count( i->_lower._bound.valuestr() ) ) {
+                    BSONObjBuilder b;
+                    // in btree impl lower bound always inclusive
+                    b.appendAs( i->_lower._bound, "$gte" );
+                    low = b.obj();
+                }
+                if ( i->_upper._inclusive || i->_upper._bound.type() != String || !regexHigh.count( i->_upper._bound.valuestr() ) ) {
+                    BSONObjBuilder b;
+                    // in btree impl upper bound always
+                    b.appendAs( i->_upper._bound, "$lte" );
+                    high = b.obj();
+                }
+            }
+        }
+        if ( !low.isEmpty() ) {
+            bb.appendElements( low );
+        }
+        if ( !high.isEmpty() ) {
+            bb.appendElements( high );
+        }
+        return bb.obj();        
     }
     
     string FieldRangeSet::getSpecial() const {
@@ -565,28 +641,16 @@ namespace mongo {
                 BSONElement e = i.next();
                 // e could be x:1 or x:{$gt:1}
                 
-                if ( strcmp( e.fieldName(), "$where" ) == 0 )
+                if ( strcmp( e.fieldName(), "$where" ) == 0 ) {
                     continue;
+                }
                 
-                // if only one $or clause, use it - this works with our first cut hack way of rewriting queries
                 if ( strcmp( e.fieldName(), "$or" ) == 0 ) {                                                                                                                                                        
-//                    massert( 13272, "$or requires nonempty array", e.type() == Array && e.embeddedObject().nFields() > 0 );
-//                    BSONObjIterator j( e.embeddedObject() );
-//                    if ( j.more() ) { // could be assert instead
-//                        BSONElement f = j.next();
-//                        massert( 13275, "$or array must contain objects", f.type() == Object );
-//                        if ( !j.more() ) { // if only one $or field, subfields are all required
-//                            BSONObjIterator k( f.embeddedObject() );
-//                            while( k.more() ) {
-//                                processQueryField( k.next(), optimize );
-//                            }
-//                        }
-//                    }
                     continue;
                 }
                 
                 if ( strcmp( e.fieldName(), "$nor" ) == 0 ) {
-                    continue; // TODO can elim some bounds
+                    continue;
                 }
                 
                 processQueryField( e, optimize );
@@ -600,11 +664,6 @@ namespace mongo {
         
         while( i.more() ) {
             BSONElement e = i.next();
-            // e could be x:1 or x:{$gt:1}
-
-            if ( strcmp( e.fieldName(), "$where" ) == 0 )
-                continue;
-            
             if ( strcmp( e.fieldName(), "$or" ) == 0 ) {                                                                                                                                                        
                 massert( 13262, "$or requires nonempty array", e.type() == Array && e.embeddedObject().nFields() > 0 );                                                                                         
                 BSONObjIterator j( e.embeddedObject() );                                                                                                                                                        
@@ -612,45 +671,11 @@ namespace mongo {
                     BSONElement f = j.next();                                                                                                                                                                   
                     massert( 13263, "$or array must contain objects", f.type() == Object );                                                                                                                     
                     _orSets.push_back( FieldRangeSet( ns, f.embeddedObject(), optimize ) );
+                    massert( 13291, "$or may not contain 'special' query", _orSets.back().getSpecial().empty() );
                 }
                 _orFound = true;
                 continue;
             }
-//
-//            bool equality = ( getGtLtOp( e ) == BSONObj::Equality );
-//            if ( equality && e.type() == Object ) {
-//                equality = ( strcmp( e.embeddedObject().firstElement().fieldName(), "$not" ) != 0 );
-//            }
-//            
-//            if ( equality || ( e.type() == Object && !e.embeddedObject()[ "$regex" ].eoo() ) ) {
-//                _baseSet._ranges[ e.fieldName() ] &= FieldRange( e , false , optimize );
-//            }
-//            if ( !equality ) {
-//                BSONObjIterator j( e.embeddedObject() );
-//                while( j.more() ) {
-//                    BSONElement f = j.next();
-//                    if ( strcmp( f.fieldName(), "$not" ) == 0 ) {
-//                        switch( f.type() ) {
-//                            case Object: {
-//                                BSONObjIterator k( f.embeddedObject() );
-//                                while( k.more() ) {
-//                                    BSONElement g = k.next();
-//                                    uassert( 13264, "invalid use of $not", g.getGtLtOp() != BSONObj::Equality );
-//                                    _baseSet.processOpElement( e.fieldName(), g, true, optimize );
-//                                }
-//                                break;
-//                            }
-//                            case RegEx:
-//                                _baseSet.processOpElement( e.fieldName(), f, true, optimize );
-//                                break;
-//                            default:
-//                                uassert( 13265, "invalid use of $not", false );
-//                        }
-//                    } else {
-//                        _baseSet.processOpElement( e.fieldName(), f, false, optimize );
-//                    }
-//                }                
-//            }
         }
     }
 
@@ -661,7 +686,7 @@ namespace mongo {
         return *trivialRange_;
     }
     
-    BSONObj FieldRangeSet::simplifiedQuery( const BSONObj &_fields ) const {
+    BSONObj FieldRangeSet::simplifiedQuery( const BSONObj &_fields, bool expandIn ) const {
         BSONObj fields = _fields;
         if ( fields.isEmpty() ) {
             BSONObjBuilder b;
@@ -680,12 +705,18 @@ namespace mongo {
             if ( range.equality() )
                 b.appendAs( range.min(), name );
             else if ( range.nontrivial() ) {
-                BSONObjBuilder c;
-                if ( range.min().type() != MinKey )
-                    c.appendAs( range.min(), range.minInclusive() ? "$gte" : "$gt" );
-                if ( range.max().type() != MaxKey )
-                    c.appendAs( range.max(), range.maxInclusive() ? "$lte" : "$lt" );
-                b.append( name, c.done() );                
+                BSONObj o;
+                if ( expandIn ) {
+                    o = range.simplifiedComplex();
+                } else {
+                    BSONObjBuilder c;
+                    if ( range.min().type() != MinKey )
+                        c.appendAs( range.min(), range.minInclusive() ? "$gte" : "$gt" );
+                    if ( range.max().type() != MaxKey )
+                        c.appendAs( range.max(), range.maxInclusive() ? "$lte" : "$lt" );
+                    o = c.obj();
+                }
+                b.append( name, o );
             }
         }
         return b.obj();

@@ -73,11 +73,9 @@ namespace mongo {
         BSONObj encapsulate( const BSONObj &obj ) {
             return BSON( "" << obj );
         }
-
         
         // real methods
 
-        
         mongo::BSONObj JSSleep(const mongo::BSONObj &args){
             assert( args.nFields() == 1 );
             assert( args.firstElement().isNumber() );
@@ -115,7 +113,10 @@ namespace mongo {
 
 #ifndef MONGO_SAFE_SHELL
 
-        BSONObj listFiles(const BSONObj& args){
+        BSONObj listFiles(const BSONObj& _args){
+            static BSONObj cd = BSON( "0" << "." );
+            BSONObj args = _args.isEmpty() ? cd : _args;
+
             uassert( 10257 ,  "need to specify 1 argument to listFiles" , args.nFields() == 1 );
             
             BSONObjBuilder lst;
@@ -159,9 +160,31 @@ namespace mongo {
             return ret.obj();
         }
 
+        BSONObj ls(const BSONObj& args) { 
+            BSONObj o = listFiles(args);
+            if( !o.isEmpty() ) {
+                for( BSONObj::iterator i = o.firstElement().Obj().begin(); i.more(); ) { 
+                    BSONObj f = i.next().Obj();
+                    cout << f["name"].String();
+                    if( f["isDirectory"].trueValue() ) cout << '/';
+                    cout << '\n';
+                }
+                cout.flush();
+            }
+            return BSONObj();
+        }
+
+        BSONObj pwd(const BSONObj&) { 
+            boost::filesystem::path p = boost::filesystem::current_path();
+            return BSON( "" << p.string() );
+        }
+
+        BSONObj hostname(const BSONObj&) { 
+            return BSON( "" << getHostName() );
+        }
 
         BSONObj removeFile(const BSONObj& args){
-            uassert( 12597 ,  "need to specify 1 argument to listFiles" , args.nFields() == 1 );
+            uassert( 12597 , "need to specify 1 argument" , args.nFields() == 1 );
             
             bool found = false;
             
@@ -346,8 +369,10 @@ namespace mongo {
                 string args = ss.str();
                 
                 boost::scoped_array<TCHAR> args_tchar (new TCHAR[args.size() + 1]);
-                for (size_t i=0; i < args.size()+1; i++)
+                size_t i;
+                for(i=0; i < args.size(); i++)
                     args_tchar[i] = args[i];
+                args_tchar[i] = 0;
 
                 HANDLE h = (HANDLE)_get_osfhandle(child_stdout);
                 assert(h != INVALID_HANDLE_VALUE);
@@ -364,7 +389,7 @@ namespace mongo {
                 ZeroMemory(&pi, sizeof(pi));
 
                 bool success = CreateProcess( NULL, args_tchar.get(), NULL, NULL, true, 0, NULL, NULL, &si, &pi) != 0;
-                assert(success);
+                uassert(13294, "couldn't start process", success);
 
                 CloseHandle(pi.hThread);
 
@@ -437,8 +462,6 @@ namespace mongo {
             shells.erase( pid );
             return x;
         }
-
-
 
         BSONObj StartMongoProgram( const BSONObj &a ) {
             _nokillop = true;
@@ -536,8 +559,7 @@ namespace mongo {
             }
 
 #endif
-        }
-            
+        }            
         
         int killDb( int port, pid_t _pid, int signal ) {
             pid_t pid;
@@ -683,6 +705,7 @@ namespace mongo {
             //can't launch programs
             scope.injectNative( "_startMongoProgram", StartMongoProgram );
             scope.injectNative( "runProgram", RunProgram );
+            scope.injectNative( "run", RunProgram );
             scope.injectNative( "runMongoProgram", RunMongoProgram );
             scope.injectNative( "stopMongod", StopMongoProgram );
             scope.injectNative( "stopMongoProgram", StopMongoProgram );        
@@ -691,9 +714,11 @@ namespace mongo {
             scope.injectNative( "clearRawMongoProgramOutput", ClearRawMongoProgramOutput );
             scope.injectNative( "waitProgram" , WaitProgram );
 
-            //can't access filesystem
             scope.injectNative( "removeFile" , removeFile );
             scope.injectNative( "listFiles" , listFiles );
+            scope.injectNative( "ls" , ls );
+            scope.injectNative( "pwd", pwd );
+            scope.injectNative( "hostname", hostname);
             scope.injectNative( "resetDbpath", ResetDbpath );
             scope.injectNative( "copyDbpath", CopyDbpath );
 #endif

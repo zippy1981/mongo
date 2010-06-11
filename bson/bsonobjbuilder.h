@@ -39,17 +39,22 @@ namespace mongo {
     class BSONObjBuilder : boost::noncopyable {
     public:
         /** @param initsize this is just a hint as to the final size of the object */
-        BSONObjBuilder(int initsize=512) : _b(_buf), _buf(initsize), _offset( 0 ), _s( this ) , _tracker(0) {
+        BSONObjBuilder(int initsize=512) : _b(_buf), _buf(initsize), _offset( 0 ), _s( this ) , _tracker(0) , _doneCalled(false) {
             _b.skip(4); /*leave room for size field*/
         }
 
         /** @param baseBuilder construct a BSONObjBuilder using an existing BufBuilder */
-        BSONObjBuilder( BufBuilder &baseBuilder ) : _b( baseBuilder ), _buf( 0 ), _offset( baseBuilder.len() ), _s( this ) , _tracker(0) {
+        BSONObjBuilder( BufBuilder &baseBuilder ) : _b( baseBuilder ), _buf( 0 ), _offset( baseBuilder.len() ), _s( this ) , _tracker(0) , _doneCalled(false) {
             _b.skip( 4 );
         }
         
-        BSONObjBuilder( const BSONSizeTracker & tracker ) : _b(_buf) , _buf(tracker.getSize() ), _offset(0), _s( this ) , _tracker( (BSONSizeTracker*)(&tracker) ){
+        BSONObjBuilder( const BSONSizeTracker & tracker ) : _b(_buf) , _buf(tracker.getSize() ), _offset(0), _s( this ) , _tracker( (BSONSizeTracker*)(&tracker) ) , _doneCalled(false) {
             _b.skip( 4 );
+        }
+
+        ~BSONObjBuilder(){
+            if ( _b.buf() && _buf.getSize() == 0 )
+                _done();
         }
 
         /** add all the fields from the object specified to this object */
@@ -376,8 +381,8 @@ namespace mongo {
         /** Append a binary data element 
             @param fieldName name of the field
             @param len length of the binary data in bytes
-            @param type type information for the data. @see BinDataType.  Use ByteArray if you 
-            don't care about the type.
+            @param subtype subtype information for the data. @see enum BinDataType in bsontypes.h.  
+                   Use BinDataGeneral if you don't care about the type.
             @param data the byte array
         */
         BSONObjBuilder& appendBinData( const char *fieldName, int len, BinDataType type, const char *data ) {
@@ -393,11 +398,12 @@ namespace mongo {
         }
         
         /**
+        Subtype 2 is deprecated.
         Append a BSON bindata bytearray element.
         @param data a byte array
         @param len the length of data
         */
-        BSONObjBuilder& appendBinDataArray( const char * fieldName , const char * data , int len ){
+        BSONObjBuilder& appendBinDataArrayDeprecated( const char * fieldName , const char * data , int len ){
             _b.append( (char) BinData );
             _b.append( fieldName );
             _b.append( len + 4 );
@@ -469,6 +475,7 @@ namespace mongo {
         BSONObj asTempObj() {
             BSONObj temp(_done());
             _b.setlen(_b.len()-1); //next append should overwrite the EOO
+            _doneCalled = false;
             return temp;
         }
 
@@ -526,6 +533,10 @@ namespace mongo {
         
     private:
         char* _done() {
+            if ( _doneCalled )
+                return _b.buf() + _offset;
+            
+            _doneCalled = true;
             _s.endField();
             _b.append((char) EOO);
             char *data = _b.buf() + _offset;
@@ -541,6 +552,7 @@ namespace mongo {
         int _offset;
         BSONObjBuilderValueStream _s;
         BSONSizeTracker * _tracker;
+        bool _doneCalled;
 
         static const string numStrs[100]; // cache of 0 to 99 inclusive
     };

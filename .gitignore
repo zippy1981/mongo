@@ -2,6 +2,7 @@
 .dbshell
 .sconsign.dblite
 .sconf_temp
+perf.data
 
 *~
 *.o
@@ -74,6 +75,7 @@ mongoimport
 mongosniff
 mongobridge
 mongostat
+bsondump
 
 *.tgz
 *.zip
