@@ -434,7 +434,7 @@ coreServerFiles += scriptingFiles
 
 coreShardFiles = []
 shardServerFiles = coreShardFiles + Glob( "s/strategy*.cpp" ) + [ "s/commands_admin.cpp" , "s/commands_public.cpp" , "s/request.cpp" ,  "s/cursors.cpp" ,  "s/server.cpp" , "s/chunk.cpp" , "s/shard.cpp" , "s/shardkey.cpp" , "s/config.cpp" , "s/config_migrate.cpp" , "s/s_only.cpp" , "s/stats.cpp" , "s/balance.cpp" , "s/balancer_policy.cpp" , "db/cmdline.cpp" ]
-serverOnlyFiles += coreShardFiles + [ "s/d_logic.cpp" ]
+serverOnlyFiles += coreShardFiles + [ "s/d_logic.cpp" , "s/d_writeback.cpp" , "s/d_migrate.cpp" ]
 
 serverOnlyFiles += [ "db/module.cpp" ] + Glob( "db/modules/*.cpp" )
 
@@ -1246,9 +1246,14 @@ testEnv.Alias( "dummySmokeSideEffect", [], [] )
 
 smokeFlags = []
 
+# Ugh.  Frobbing the smokeFlags must precede using them to construct
+# actions, I think.
 if GetOption( 'smokedbprefix') is not None:
     smokeFlags += ['--smoke-db-prefix', GetOption( 'smokedbprefix')]
-    
+
+if 'startMongodSmallOplog' in COMMAND_LINE_TARGETS:
+    smokeFlags += ["--small-oplog"]
+
 def addTest(name, deps, actions):
     testEnv.Alias( name, deps, actions )
     testEnv.AlwaysBuild( name )
@@ -1285,11 +1290,7 @@ testEnv.Alias( "startMongod", [add_exe("mongod")]);
 testEnv.AlwaysBuild( "startMongod" );
 testEnv.SideEffect( "dummySmokeSideEffect", "startMongod" )
 
-def startMongodSmallOplog(env, target, source):
-    global smokeFlags
-    smokeFlags += ["--small-oplog"]
-
-testEnv.Alias( "startMongodSmallOplog", [add_exe("mongod")], [startMongodSmallOplog] );
+testEnv.Alias( "startMongodSmallOplog", [add_exe("mongod")], [] );
 testEnv.AlwaysBuild( "startMongodSmallOplog" );
 testEnv.SideEffect( "dummySmokeSideEffect", "startMongodSmallOplog" )
 

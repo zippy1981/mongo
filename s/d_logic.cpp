@@ -36,22 +36,20 @@
 #include "../util/queue.h"
 
 #include "shard.h"
+#include "d_logic.h"
 
 using namespace std;
 
 namespace mongo {
     
-    typedef map<string,unsigned long long> NSVersions;
-    
-    NSVersions globalVersions;
-    boost::thread_specific_ptr<NSVersions> clientShardVersions;
+    NSVersionMap globalVersions;
+    boost::thread_specific_ptr<NSVersionMap> clientShardVersions;
 
     string shardConfigServer;
 
     boost::thread_specific_ptr<OID> clientServerIds;
-    map< string , BlockingQueue<BSONObj>* > clientQueues;
 
-    unsigned long long getVersion( BSONElement e , string& errmsg ){
+    unsigned long long extractVersion( BSONElement e , string& errmsg ){
         if ( e.eoo() ){
             errmsg = "no version";
             return 0;
@@ -80,32 +78,7 @@ namespace mongo {
         }
     };
     
-    class WriteBackCommand : public MongodShardCommand {
-    public:
-        virtual LockType locktype() const { return NONE; } 
-        WriteBackCommand() : MongodShardCommand( "writebacklisten" ){}
-        void help(stringstream& h) const { h<<"internal"; }
-        bool run(const string& , BSONObj& cmdObj, string& errmsg, BSONObjBuilder& result, bool){
 
-            BSONElement e = cmdObj.firstElement();
-            if ( e.type() != jstOID ){
-                errmsg = "need oid as first value";
-                return 0;
-            }
-            
-            const OID id = e.__oid();
-            
-            if ( ! clientQueues[id.str()] )
-                clientQueues[id.str()] = new BlockingQueue<BSONObj>();
-
-            BSONObj z = clientQueues[id.str()]->blockingPop();
-            log(1) << "WriteBackCommand got : " << z << endl;
-            
-            result.append( "data" , z );
-            
-            return true;
-        }
-    } writeBackCommand;
 
     // setShardVersion( ns )
     
@@ -158,9 +131,6 @@ namespace mongo {
                         OID * nid = new OID();
                         nid->init( s );
                         clientServerIds.reset( nid );
-                        
-                        if ( ! clientQueues[s] )
-                            clientQueues[s] = new BlockingQueue<BSONObj>();
                     }
                     else if ( clientId != *clientServerIds.get() ){
                         errmsg = "server id has changed!";
@@ -169,16 +139,16 @@ namespace mongo {
                 }
             }
             
-            unsigned long long version = getVersion( cmdObj["version"] , errmsg );
+            unsigned long long version = extractVersion( cmdObj["version"] , errmsg );
             if ( errmsg.size() ){
                 return false;
             }
 
-            NSVersions * versions = clientShardVersions.get();
+            NSVersionMap * versions = clientShardVersions.get();
             
             if ( ! versions ){
                 log(1) << "entering shard mode for connection" << endl;
-                versions = new NSVersions();
+                versions = new NSVersionMap();
                 clientShardVersions.reset( versions );
             }
             
@@ -274,163 +244,7 @@ namespace mongo {
         
     } getShardVersion;
     
-    class MoveShardStartCommand : public MongodShardCommand {
-    public:
-        MoveShardStartCommand() : MongodShardCommand( "movechunk.start" ){}
-        virtual void help( stringstream& help ) const {
-            help << "should not be calling this directly" << endl;
-        }
 
-        virtual LockType locktype() const { return WRITE; } 
-        
-        bool run(const string& , BSONObj& cmdObj, string& errmsg, BSONObjBuilder& result, bool){
-            // so i have to start clone, tell caller its ok to make change
-            // at this point the caller locks me, and updates config db
-            // then finish calls finish, and then deletes data when cursors are done
-            
-            string ns = cmdObj["movechunk.start"].valuestrsafe();
-            string to = cmdObj["to"].valuestrsafe();
-            string from = cmdObj["from"].valuestrsafe(); // my public address, a tad redundant, but safe
-            BSONObj filter = cmdObj.getObjectField( "filter" );
-            
-            if ( ns.size() == 0 ){
-                errmsg = "need to specify namespace in command";
-                return false;
-            }
-            
-            if ( to.size() == 0 ){
-                errmsg = "need to specify server to move shard to";
-                return false;
-            }
-            if ( from.size() == 0 ){
-                errmsg = "need to specify server to move shard from (redundat i know)";
-                return false;
-            }
-            
-            if ( filter.isEmpty() ){
-                errmsg = "need to specify a filter";
-                return false;
-            }
-            
-            log() << "got movechunk.start: " << cmdObj << endl;
-            
-            
-            BSONObj res;
-            bool ok;
-            
-            {
-                dbtemprelease unlock;
-                
-                ScopedDbConnection conn( to );
-                ok = conn->runCommand( "admin" , 
-                                            BSON( "startCloneCollection" << ns <<
-                                                  "from" << from <<
-                                                  "query" << filter 
-                                                  ) , 
-                                            res );
-                conn.done();
-            }
-            
-            log() << "   movechunk.start res: " << res << endl;
-            
-            if ( ok ){
-                result.append( res["finishToken"] );
-            }
-            else {
-                errmsg = "startCloneCollection failed: ";
-                errmsg += res["errmsg"].valuestrsafe();
-            }
-            return ok;
-        }
-        
-    } moveShardStartCmd;
-
-    class MoveShardFinishCommand : public MongodShardCommand {
-    public:
-        MoveShardFinishCommand() : MongodShardCommand( "movechunk.finish" ){}
-        virtual void help( stringstream& help ) const {
-            help << "should not be calling this directly" << endl;
-        }
-
-        virtual LockType locktype() const { return WRITE; } 
-        
-        bool run(const string& , BSONObj& cmdObj, string& errmsg, BSONObjBuilder& result, bool){
-            // see MoveShardStartCommand::run
-            
-            string ns = cmdObj["movechunk.finish"].valuestrsafe();
-            if ( ns.size() == 0 ){
-                errmsg = "need ns as cmd value";
-                return false;
-            }
-
-            string to = cmdObj["to"].valuestrsafe();
-            if ( to.size() == 0 ){
-                errmsg = "need to specify server to move shard to";
-                return false;
-            }
-
-
-            unsigned long long newVersion = getVersion( cmdObj["newVersion"] , errmsg );
-            if ( newVersion == 0 ){
-                errmsg = "have to specify new version number";
-                return false;
-            }
-                                                        
-            BSONObj finishToken = cmdObj.getObjectField( "finishToken" );
-            if ( finishToken.isEmpty() ){
-                errmsg = "need finishToken";
-                return false;
-            }
-            
-            if ( ns != finishToken["collection"].valuestrsafe() ){
-                errmsg = "namespaced don't match";
-                return false;
-            }
-            
-            // now we're locked
-            globalVersions[ns] = newVersion;
-            NSVersions * versions = clientShardVersions.get();
-            if ( ! versions ){
-                versions = new NSVersions();
-                clientShardVersions.reset( versions );
-            }
-            (*versions)[ns] = newVersion;
-            
-            BSONObj res;
-            bool ok;
-            
-            {
-                dbtemprelease unlock;
-                
-                ScopedDbConnection conn( to );
-                ok = conn->runCommand( "admin" , 
-                                       BSON( "finishCloneCollection" << finishToken ) ,
-                                       res );
-                conn.done();
-            }
-            
-            if ( ! ok ){
-                // uh oh
-                errmsg = "finishCloneCollection failed!";
-                result << "finishError" << res;
-                return false;
-            }
-            
-            // wait until cursors are clean
-            cout << "WARNING: deleting data before ensuring no more cursors TODO" << endl;
-            
-            {
-                BSONObj removeFilter = finishToken.getObjectField( "query" );
-                Client::Context ctx(ns);
-                long long num = deleteObjects( ns.c_str() , removeFilter , false , true );
-                log() << "movechunk.finish deleted: " << num << endl;
-                result.appendNumber( "numDeleted" , num );
-            }
-
-            return true;
-        }
-        
-    } moveShardFinishCmd;
     
     bool haveLocalShardingInfo( const string& ns ){
         if ( shardConfigServer.empty() )
@@ -441,7 +255,7 @@ namespace mongo {
         if ( version == 0 )
             return false;
         
-        NSVersions * versions = clientShardVersions.get();
+        NSVersionMap * versions = clientShardVersions.get();
         if ( ! versions )
             return false;
         
@@ -457,11 +271,11 @@ namespace mongo {
             return true;
         }
 
-        NSVersions::iterator i = globalVersions.find( ns );
+        NSVersionMap::iterator i = globalVersions.find( ns );
         if ( i == globalVersions.end() )
             return true;
         
-        NSVersions * versions = clientShardVersions.get();
+        NSVersionMap * versions = clientShardVersions.get();
         if ( ! versions ){
             // this means the client has nothing sharded
             // so this allows direct connections to do whatever they want
@@ -550,7 +364,7 @@ namespace mongo {
         b.append( "ns" , ns );
         b.appendBinData( "msg" , m.header()->len , bdtCustom , (char*)(m.singleData()) );
         log() << "writing back msg with len: " << m.header()->len << " op: " << m.operation() << endl;
-        clientQueues[clientID->str()]->push( b.obj() );
+        queueWriteBack( clientID->str() , b.obj() );
 
         return true;
     }
