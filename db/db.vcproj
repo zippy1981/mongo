@@ -1643,6 +1643,10 @@
 				>
 			</File>
 			<File
+				RelativePath="..\s\d_writeback.cpp"
+				>
+			</File>
+			<File
 				RelativePath="..\s\shardconnection.cpp"
 				>
 			</File>

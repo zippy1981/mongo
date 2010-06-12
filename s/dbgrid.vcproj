@@ -213,6 +213,10 @@
 				>
 			</File>
 			<File
+				RelativePath=".\d_writeback.cpp"
+				>
+			</File>
+			<File
 				RelativePath="..\db\queryutil.cpp"
 				>
 			</File>
