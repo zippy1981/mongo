@@ -261,12 +261,18 @@ namespace mongo {
             pid_t pid() const { return pid_; }
 
             boost::filesystem::path find(string prog) { 
+                cout << "ELIOT [" << prog << "]" << endl;
                 boost::filesystem::path p = prog;
 #ifdef _WIN32
                 p = change_extension(p, ".exe");
 #endif
 
-                if( boost::filesystem::exists(p)  ) return p;
+                if( boost::filesystem::exists(p) ){
+#ifndef _WIN32
+                    p = boost::filesystem::initial_path() / p;
+#endif
+                    return p;
+                }
 
                 {
                     boost::filesystem::path t = boost::filesystem::current_path() / p;
@@ -285,7 +291,8 @@ namespace mongo {
                     boost::filesystem::path t = boost::filesystem::initial_path() / p;
                     if( boost::filesystem::exists(t)  ) return t;
                 }
-                massert( 10435, "run: couldn't find " + prog, false );
+                // this breaks system programs
+                // massert( 10435, (string)"run: couldn't find " + prog , false );
                 return p;
             } 
 
@@ -337,7 +344,8 @@ namespace mongo {
                 if ( program != "mongod" && program != "mongos" && program != "mongobridge" )
                     port_ = 0;
                 else {
-                    cout << "error: a port number is expected when running mongod (etc.) from the shell" << endl;
+                    if ( port_ <= 0 )
+                        cout << "error: a port number is expected when running mongod (etc.) from the shell" << endl;
                     assert( port_ > 0 );
                 }
                 if ( port_ > 0 && dbs.count( port_ ) != 0 ){
