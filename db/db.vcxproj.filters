@@ -235,6 +235,9 @@
     <ClInclude Include="jsobj.h" />
     <ClInclude Include="..\bson\oid.h" />
     <ClInclude Include="..\bson\ordering.h" />
+    <ClInclude Include="..\util\text.h">
+      <Filter>util</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="..\SConstruct" />
@@ -250,5 +253,11 @@
     <Library Include="..\..\js\js32r.lib" />
     <Library Include="..\..\js\js64d.lib" />
     <Library Include="..\..\js\js64r.lib" />
+    <None Include="..\jstests\rs\rs_basic.js">
+      <Filter>rs\test stuff</Filter>
+    </None>
+    <None Include="..\jstests\rs\test_framework.js">
+      <Filter>rs\test stuff</Filter>
+    </None>
   </ItemGroup>
 </Project>

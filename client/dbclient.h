@@ -315,17 +315,17 @@ namespace mongo {
 
            If the collection already exists, no action occurs.
 
-           ns:     fully qualified collection name
-            size:   desired initial extent size for the collection.
-                   Must be <= 1000000000 for normal collections.
-        		   For fixed size (capped) collections, this size is the total/max size of the
-        		   collection.
-           capped: if true, this is a fixed size collection (where old data rolls out).
-           max:    maximum number of objects if capped (optional).
+           @param ns     fully qualified collection name
+           @param size   desired initial extent size for the collection.
+                         Must be <= 1000000000 for normal collections.
+                         For fixed size (capped) collections, this size is the total/max size of the
+                         collection.
+           @param capped if true, this is a fixed size collection (where old data rolls out).
+           @param max    maximum number of objects if capped (optional).
 
            returns true if successful.
         */
-        bool createCollection(const string &ns, unsigned size = 0, bool capped = false, int max = 0, BSONObj *info = 0);
+        bool createCollection(const string &ns, long long size = 0, bool capped = false, int max = 0, BSONObj *info = 0);
 
         /** Get error result from the last operation on this connection. 
             @return error message text, or empty string if no error.
