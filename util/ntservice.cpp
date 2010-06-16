@@ -19,6 +19,7 @@
 #include "ntservice.h"
 #include "text.h"
 #include <direct.h>
+#include "..\db\namespace.h"
 
 #if defined(_WIN32)
 
@@ -45,6 +46,17 @@ namespace mongo {
             assert( _getcwd(buffer, 256) );
             commandLine << '"' << buffer << '\\' << argv[0] << "\" ";
         }
+
+	// auto-create the directory if necessary.
+	if ( !boost::filesystem::exists( mongo::dbpath ) ) {
+		log() << "Dbpath {" << mongo::dbpath << ") does not exist creating" << endl;
+		if ( !boost::filesystem::create_directories( boost::filesystem::path( mongo::dbpath ) ) ) {
+			log() << "Cannot create dbpath. Aborting service installation." << endl;
+			return false;
+		}
+	}
+
+	// TODO: Set appropiate minimalistic permissions for the folder.
         
 		for ( int i = 1; i < argc; i++ ) {
 			std::string arg( argv[ i ] );
