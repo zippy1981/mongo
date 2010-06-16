@@ -18,6 +18,12 @@
 #include "pch.h"
 #include <stdio.h>
 
+#if defined(_WIN32)
+# if defined(USE_READLINE)
+# define USE_READLINE_STATIC
+# endif
+#endif
+
 #ifdef USE_READLINE
 #include <readline/readline.h>
 #include <readline/history.h>
@@ -32,6 +38,7 @@ jmp_buf jbuf;
 #include "utils.h"
 #include "../util/password.h"
 #include "../util/version.h"
+#include "../util/goodies.h"
 
 using namespace std;
 using namespace boost::filesystem;
@@ -162,6 +169,7 @@ void killOps() {
 }
 
 void quitNicely( int sig ){
+    mongo::goingAway = true;
     if ( sig == SIGINT && inMultiLine ){
         gotInterrupted = 1;
         return;
@@ -169,6 +177,13 @@ void quitNicely( int sig ){
     if ( sig == SIGPIPE )
         mongo::rawOut( "mongo got signal SIGPIPE\n" );
     killOps();
+    shellHistoryDone();
+    exit(0);
+}
+#else
+void quitNicely( int sig ){
+    mongo::goingAway = true;
+    //killOps();
     shellHistoryDone();
     exit(0);
 }
@@ -193,7 +208,7 @@ char * shellReadline( const char * prompt , int handlesigint = 0 ){
 #endif
 
     char * ret = readline( prompt );
-    signal( SIGINT , quitNicely );
+        signal( SIGINT , quitNicely );
     return ret;
 #else
     printf("%s", prompt); cout.flush();
@@ -625,6 +640,7 @@ int _main(int argc, char* argv[]) {
         shellHistoryDone();
     }
 
+    mongo::goingAway = true;
     return 0;
 }
 

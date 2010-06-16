@@ -19,9 +19,105 @@
 #pragma once
 
 #include "../pch.h"
+#include "../db/jsobj.h"
 
 namespace mongo {
+    
+    class ShardingState;
+    
+    typedef unsigned long long ConfigVersion;
+    typedef map<string,ConfigVersion> NSVersionMap;
 
+    // -----------
+
+    /**
+     * TODO: this only works with single fields at the moment
+     */
+    class ChunkMatcher {
+        typedef map<BSONObj,pair<BSONObj,BSONObj>,BSONObjCmp> MyMap;
+    public:
+        
+        bool belongsToMe( const BSONObj& key , const DiskLoc& loc ) const;
+
+    private:
+        ChunkMatcher( ConfigVersion version );
+        
+        void gotRange( const BSONObj& min , const BSONObj& max );
+        
+        ConfigVersion _version;
+        string _field;
+        MyMap _map;
+        
+        friend class ShardingState;
+    };
+
+    typedef shared_ptr<ChunkMatcher> ChunkMatcherPtr;
+    
+    // --------------
+    // --- global state ---
+    // --------------
+
+    class ShardingState {
+    public:
+        ShardingState();
+        
+        bool enabled() const { return _enabled; }
+        const string& getConfigServer() const { return _configServer; }
+        void enable( const string& server );
+
+        void gotShardName( const string& name );
+        void gotShardHost( const string& host );
+        
+        bool hasVersion( const string& ns );
+        bool hasVersion( const string& ns , ConfigVersion& version );
+        ConfigVersion& getVersion( const string& ns ); // TODO: this is dangeroues
+        void setVersion( const string& ns , const ConfigVersion& version );
+        
+        void appendInfo( BSONObjBuilder& b );
+        
+        ChunkMatcherPtr getChunkMatcher( const string& ns , bool load=false , ConfigVersion version=0 );
+        
+    private:
+        
+        bool _enabled;
+        
+        string _configServer;
+        
+        string _shardName;
+        string _shardHost;
+
+        mongo::mutex _mutex;
+        NSVersionMap _versions;
+        map<string,ChunkMatcherPtr> _chunks;
+    };
+    
+    extern ShardingState shardingState;
+
+    // --------------
+    // --- per connection ---
+    // --------------
+    
+    class ShardedConnectionInfo {
+    public:
+        ShardedConnectionInfo();
+        
+        const OID& getID() const { return _id; }
+        bool hasID() const { return _id.isSet(); }
+        void setID( const OID& id );
+        
+        ConfigVersion& getVersion( const string& ns ); // TODO: this is dangeroues
+        void setVersion( const string& ns , const ConfigVersion& version );
+        
+        static ShardedConnectionInfo* get( bool create );
+        
+    private:
+        
+        OID _id;
+        NSVersionMap _versions;
+
+        static boost::thread_specific_ptr<ShardedConnectionInfo> _tl;
+    };
+    
     // -----------------
     // --- core ---
     // -----------------
@@ -50,14 +146,5 @@ namespace mongo {
 
     /* queue a write back on a remote server for a failed write */
     void queueWriteBack( const string& remote , const BSONObj& o );
-
-
-
-    // TEMP TEMP TEMP
-
-    typedef map<string,unsigned long long> NSVersionMap;
-
-    extern NSVersionMap globalVersions;
-    extern boost::thread_specific_ptr<NSVersionMap> clientShardVersions;
 
 }
