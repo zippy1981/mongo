@@ -1247,6 +1247,10 @@
 				>
 			</File>
 			<File
+				RelativePath="..\s\d_state.cpp"
+				>
+			</File>
+			<File
 				RelativePath="..\s\d_util.cpp"
 				>
 			</File>

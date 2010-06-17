@@ -148,7 +148,7 @@
 				AdditionalDependencies="ws2_32.lib psapi.lib"
 				LinkIncremental="1"
 				AdditionalLibraryDirectories="&quot;c:\program files\boost\latest\lib&quot;;c:\boost\lib;\boost\lib"
-				GenerateDebugInformation="true"
+				GenerateDebugInformation="false"
 				SubSystem="1"
 				OptimizeReferences="2"
 				EnableCOMDATFolding="2"
@@ -1640,6 +1640,10 @@
 			>
 			<File
 				RelativePath="..\s\d_logic.cpp"
+				>
+			</File>
+			<File
+				RelativePath="..\s\d_state.cpp"
 				>
 			</File>
 			<File
