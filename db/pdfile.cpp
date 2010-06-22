@@ -966,7 +966,7 @@ namespace mongo {
                                             *i, ordering, dupsAllowed, idx);
             }
             catch (AssertionException& e) {
-                if( e.code == 10287 && idxNo == d->nIndexes ) { 
+                if( e.getCode() == 10287 && idxNo == d->nIndexes ) { 
                     DEV log() << "info: caught key already in index on bg indexing (ok)" << endl;
                     continue;
                 }
@@ -1616,6 +1616,16 @@ namespace mongo {
 
     typedef boost::filesystem::path Path;
 
+    void boostRenameWrapper( const Path &from, const Path &to ) {
+        try {
+            boost::filesystem::rename( from, to );
+        } catch ( const std::runtime_error & ) {
+            // boost rename doesn't work across partitions
+            boost::filesystem::copy_file( from, to);
+            boost::filesystem::remove( from );
+        }
+    }
+    
     // back up original database files to 'temp' dir
     void _renameForBackup( const char *database, const Path &reservedPath ) {
         Path newPath( reservedPath );
@@ -1629,7 +1639,7 @@ namespace mongo {
             virtual bool apply( const Path &p ) {
                 if ( !boost::filesystem::exists( p ) )
                     return false;
-                boost::filesystem::rename( p, newPath_ / ( p.leaf() + ".bak" ) );
+                boostRenameWrapper( p, newPath_ / ( p.leaf() + ".bak" ) );
                 return true;
             }
             virtual const char * op() const {
@@ -1652,7 +1662,7 @@ namespace mongo {
             virtual bool apply( const Path &p ) {
                 if ( !boost::filesystem::exists( p ) )
                     return false;
-                boost::filesystem::rename( p, newPath_ / p.leaf() );
+                boostRenameWrapper( p, newPath_ / p.leaf() );
                 return true;
             }
             virtual const char * op() const {
@@ -1831,6 +1841,8 @@ namespace mongo {
             dbs.insert( i->first );
         }
         
+        currentClient.get()->getContext()->clear();
+
         BSONObjBuilder bb( result.subarrayStart( "dbs" ) );
         int n = 0;
         int nNotClosed = 0;

@@ -32,8 +32,11 @@ namespace mongo {
 
     class Listener {
     public:
-        Listener(const string &ip, int p, bool logConnect=true ) : _port(p), _ip(ip), _logConnect(logConnect) { }
-        virtual ~Listener() {}
+        Listener(const string &ip, int p, bool logConnect=true ) : _port(p), _ip(ip), _logConnect(logConnect), _elapsedTime(0){ }
+        virtual ~Listener() {
+            if ( _timeTracker == this )
+                _timeTracker = 0;
+        }
         void initAndListen(); // never returns unless error (start a thread)
 
         /* spawn a thread, etc., then return */
@@ -43,10 +46,32 @@ namespace mongo {
         }
 
         const int _port;
+        
+        /**
+         * @return a rough estimate of elepased time since the server started
+         */
+        long long getMyElapsedTimeMillis() const { return _elapsedTime; }
+
+        void setAsTimeTracker(){
+            _timeTracker = this;
+        }
+
+        static const Listener* getTimeTracker(){
+            return _timeTracker;
+        }
+        
+        static long long getElapsedTimeMillis() { 
+            if ( _timeTracker )
+                return _timeTracker->getMyElapsedTimeMillis();
+            return 0;
+        }
 
     private:
         string _ip;
         bool _logConnect;
+        long long _elapsedTime;
+
+        static const Listener* _timeTracker;
     };
 
     class AbstractMessagingPort {
@@ -367,8 +392,7 @@ struct OP_GETMORE : public MSGHEADER {
 
     class SocketException : public DBException {
     public:
-        virtual const char* what() const throw() { return "socket exception"; }
-        virtual int getCode() const { return 9001; }
+        SocketException() : DBException( "socket exception" , 9001 ){}
     };
 
     MSGID nextMessageId();
@@ -378,4 +402,40 @@ struct OP_GETMORE : public MSGHEADER {
 
     extern TicketHolder connTicketHolder;
 
+    class ElapsedTracker {
+    public:
+        ElapsedTracker( int hitsBetweenMarks , int msBetweenMarks )
+            : _h( hitsBetweenMarks ) , _ms( msBetweenMarks ) , _pings(0){
+            _last = Listener::getElapsedTimeMillis();
+        }
+
+        /**
+         * call this for every iteration
+         * returns true if one of the triggers has gone off
+         */
+        bool ping(){
+            if ( ( ++_pings % _h ) == 0 ){
+                _last = Listener::getElapsedTimeMillis();
+                return true;
+            }
+            
+            long long now = Listener::getElapsedTimeMillis();
+            if ( now - _last > _ms ){
+                _last = now;
+                return true;
+            }
+                
+            return false;
+        }
+
+    private:
+        int _h;
+        int _ms;
+
+        unsigned long long _pings;
+
+        long long _last;
+        
+    };
+        
 } // namespace mongo
