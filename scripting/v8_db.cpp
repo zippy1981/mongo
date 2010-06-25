@@ -20,6 +20,7 @@
 #include "v8_db.h"
 #include "engine.h"
 #include "util/base64.h"
+#include "util/text.h"
 #include "../client/syncclusterconnection.h"
 #include <iostream>
 
@@ -632,8 +633,8 @@ namespace mongo {
 
     v8::Handle<v8::Value> numberLongInit( const v8::Arguments& args ) {
         
-        if (args.Length() != 1 && args.Length() != 3) {
-            return v8::ThrowException( v8::String::New( "NumberLong needs 1 or 3 arguments" ) );
+        if (args.Length() != 0 && args.Length() != 1 && args.Length() != 3) {
+            return v8::ThrowException( v8::String::New( "NumberLong needs 0, 1 or 3 arguments" ) );
         }
         
         v8::Handle<v8::Object> it = args.This();
@@ -642,9 +643,33 @@ namespace mongo {
             v8::Function* f = getNamedCons( "NumberLong" );
             it = f->NewInstance();
         }
-        
-        it->Set( v8::String::New( "floatApprox" ) , args[0] );
-        if ( args.Length() == 3 ) {
+
+        if ( args.Length() == 0 ) {
+            it->Set( v8::String::New( "floatApprox" ), v8::Number::New( 0 ) );
+        } else if ( args.Length() == 1 ) {
+            if ( args[ 0 ]->IsNumber() ) {
+                it->Set( v8::String::New( "floatApprox" ), args[ 0 ] );            
+            } else {
+                v8::String::Utf8Value data( args[ 0 ] );
+                string num = *data;
+                const char *numStr = num.c_str();
+                long long n;
+                try {
+                    n = parseLL( numStr );
+                } catch ( const AssertionException & ) {
+                    return v8::ThrowException( v8::String::New( "could not convert string to long long" ) );
+                }
+                unsigned long long val = n;
+                if ( (long long)val == (long long)(double)(long long)(val) ) {
+                    it->Set( v8::String::New( "floatApprox" ), v8::Number::New( (double)(long long)( val ) ) );
+                } else {
+                    it->Set( v8::String::New( "floatApprox" ), v8::Number::New( (double)(long long)( val ) ) );
+                    it->Set( v8::String::New( "top" ), v8::Integer::New( val >> 32 ) );
+                    it->Set( v8::String::New( "bottom" ), v8::Integer::New( (unsigned long)(val & 0x00000000ffffffff) ) );
+                }                
+            }
+        } else {
+            it->Set( v8::String::New( "floatApprox" ) , args[0] );
             it->Set( v8::String::New( "top" ) , args[1] );
             it->Set( v8::String::New( "bottom" ) , args[2] );
         }
@@ -687,10 +712,12 @@ namespace mongo {
         
         v8::Handle<v8::Object> it = args.This();
         
-        long long val = numberLongVal( it );
-        
         stringstream ss;
-        ss << val;
+        if ( !it->Has( v8::String::New( "top" ) ) ) {
+            ss << "NumberLong( " << it->Get( v8::String::New( "floatApprox" ) )->NumberValue() << " )";
+        } else {
+            ss << "NumberLong( \"" << numberLongVal( it ) << "\" )";
+        }
         string ret = ss.str();
         return v8::String::New( ret.c_str() );
     }

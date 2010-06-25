@@ -45,7 +45,20 @@ namespace mongo {
                 BSONObj o = *i;
                 string name = o["_id"].String();
                 string host = o["host"].String();
-                Shard s( name , host );
+
+                long long maxSize = 0;
+                BSONElement maxSizeElem = o[ ShardFields::maxSize.name() ];
+                if ( ! maxSizeElem.eoo() ){
+                    maxSize = maxSizeElem.numberLong();
+                }
+
+                bool isDraining = false;
+                BSONElement isDrainingElem = o[ ShardFields::draining.name() ];
+                if ( ! isDrainingElem.eoo() ){
+                    isDraining = isDrainingElem.Bool();
+                }
+
+                Shard s( name , host , maxSize , isDraining );
                 _lookup[name] = s;
                 _lookup[host] = s;
             }
@@ -111,6 +124,7 @@ namespace mongo {
         _name = s._name;
         _addr = s._addr;
         _maxSize = s._maxSize;
+        _isDraining = s._isDraining;
     }
     
     void Shard::getAllShards( vector<Shard>& all ){
@@ -165,7 +179,7 @@ namespace mongo {
     ShardStatus::ShardStatus( const Shard& shard , const BSONObj& obj )
         : _shard( shard ) {
         _mapped = obj.getFieldDotted( "mem.mapped" ).numberLong();
-        _writeLock = 0; // TOOD
+        _writeLock = 0; // TODO
     }
 
 

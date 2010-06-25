@@ -32,8 +32,11 @@ namespace mongo {
 
     class Listener {
     public:
-        Listener(const string &ip, int p, bool logConnect=true ) : _port(p), _ip(ip), _logConnect(logConnect) { }
-        virtual ~Listener() {}
+        Listener(const string &ip, int p, bool logConnect=true ) : _port(p), _ip(ip), _logConnect(logConnect), _elapsedTime(0){ }
+        virtual ~Listener() {
+            if ( _timeTracker == this )
+                _timeTracker = 0;
+        }
         void initAndListen(); // never returns unless error (start a thread)
 
         /* spawn a thread, etc., then return */
@@ -43,10 +46,32 @@ namespace mongo {
         }
 
         const int _port;
+        
+        /**
+         * @return a rough estimate of elepased time since the server started
+         */
+        long long getMyElapsedTimeMillis() const { return _elapsedTime; }
+
+        void setAsTimeTracker(){
+            _timeTracker = this;
+        }
+
+        static const Listener* getTimeTracker(){
+            return _timeTracker;
+        }
+        
+        static long long getElapsedTimeMillis() { 
+            if ( _timeTracker )
+                return _timeTracker->getMyElapsedTimeMillis();
+            return 0;
+        }
 
     private:
         string _ip;
         bool _logConnect;
+        long long _elapsedTime;
+
+        static const Listener* _timeTracker;
     };
 
     class AbstractMessagingPort {
@@ -113,9 +138,6 @@ namespace mongo {
         friend class PiggyBackData;
     };
 
-    //#pragma pack()
-#pragma pack(1)
-
     enum Operations {
         opReply = 1,     /* reply. responseTo is set. */
         dbMsg = 1000,    /* generic msg command followed by a string */
@@ -148,6 +170,27 @@ namespace mongo {
         }
     }
 
+#pragma pack(1)
+/* see http://www.mongodb.org/display/DOCS/Mongo+Wire+Protocol 
+*/
+struct MSGHEADER { 
+    int messageLength; // total message size, including this
+    int requestID;     // identifier for this message
+    int responseTo;    // requestID from the original request
+                       //   (used in reponses from db)
+    int opCode;     
+};
+struct OP_GETMORE : public MSGHEADER {
+    MSGHEADER header;             // standard message header
+    int       ZERO_or_flags;      // 0 - reserved for future use
+    //cstring   fullCollectionName; // "dbname.collectionname"
+    //int32     numberToReturn;     // number of documents to return
+    //int64     cursorID;           // cursorID from the OP_REPLY
+};
+#pragma pack()
+
+#pragma pack(1)
+    /* todo merge this with MSGHEADER (or inherit from it). */
     struct MsgData {
         int len; /* len of the msg, including this field */
         MSGID id; /* request/reply id's match... */
@@ -186,7 +229,6 @@ namespace mongo {
     inline int MsgData::dataLen() {
         return len - MsgDataHeaderSize;
     }
-
 #pragma pack()
 
     class Message {
@@ -350,8 +392,7 @@ namespace mongo {
 
     class SocketException : public DBException {
     public:
-        virtual const char* what() const throw() { return "socket exception"; }
-        virtual int getCode() const { return 9001; }
+        SocketException() : DBException( "socket exception" , 9001 ){}
     };
 
     MSGID nextMessageId();
@@ -361,4 +402,40 @@ namespace mongo {
 
     extern TicketHolder connTicketHolder;
 
+    class ElapsedTracker {
+    public:
+        ElapsedTracker( int hitsBetweenMarks , int msBetweenMarks )
+            : _h( hitsBetweenMarks ) , _ms( msBetweenMarks ) , _pings(0){
+            _last = Listener::getElapsedTimeMillis();
+        }
+
+        /**
+         * call this for every iteration
+         * returns true if one of the triggers has gone off
+         */
+        bool ping(){
+            if ( ( ++_pings % _h ) == 0 ){
+                _last = Listener::getElapsedTimeMillis();
+                return true;
+            }
+            
+            long long now = Listener::getElapsedTimeMillis();
+            if ( now - _last > _ms ){
+                _last = now;
+                return true;
+            }
+                
+            return false;
+        }
+
+    private:
+        int _h;
+        int _ms;
+
+        unsigned long long _pings;
+
+        long long _last;
+        
+    };
+        
 } // namespace mongo

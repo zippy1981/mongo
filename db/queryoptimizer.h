@@ -57,7 +57,7 @@ namespace mongo {
         const char *ns() const { return fbs_.ns(); }
         NamespaceDetails *nsd() const { return d; }
         BSONObj originalQuery() const { return _originalQuery; }
-        BSONObj simplifiedQuery( const BSONObj& fields = BSONObj() ) const { return fbs_.simplifiedQuery( fields ); }
+        BSONObj simplifiedQuery( const BSONObj& fields = BSONObj(), bool expandIn = false ) const { return fbs_.simplifiedQuery( fields, expandIn ); }
         const FieldRange &range( const char *fieldName ) const { return fbs_.range( fieldName ); }
         void registerSelf( long long nScanned ) const;
         // just for testing
@@ -125,19 +125,19 @@ namespace mongo {
         bool complete() const { return _complete; }
         bool error() const { return _error; }
         bool stopRequested() const { return _stopRequested; }
-        string exceptionMessage() const { return _exceptionMessage; }
+        ExceptionInfo exception() const { return _exception; }
         const QueryPlan &qp() const { return *_qp; }
         // To be called by QueryPlanSet::Runner only.
         void setQueryPlan( const QueryPlan *qp ) { _qp = qp; }
-        void setExceptionMessage( const string &exceptionMessage ) {
+        void setException( const DBException &e ) {
             _error = true;
-            _exceptionMessage = exceptionMessage;
+            _exception = e.getInfo();
         }
         shared_ptr< CoveredIndexMatcher > matcher() const { return _matcher; }
     protected:
         void setComplete() {
             _haveOrConstraint = true;
-            _orConstraint = qp().simplifiedQuery( qp().indexKey() );
+            _orConstraint = qp().simplifiedQuery( qp().indexKey(), true );
             _complete = true;
         }
         void setStop() { setComplete(); _stopRequested = true; }
@@ -151,7 +151,7 @@ namespace mongo {
     private:
         bool _complete;
         bool _stopRequested;
-        string _exceptionMessage;
+        ExceptionInfo _exception;
         const QueryPlan *_qp;
         bool _error;
         shared_ptr< CoveredIndexMatcher > _matcher;
@@ -263,7 +263,7 @@ namespace mongo {
         shared_ptr< T > runOpOnce( T &op ) {
             return dynamic_pointer_cast< T >( runOpOnce( static_cast< QueryOp& >( op ) ) );
         }       
-        bool mayRunMore() const { return _i < _n; }
+        bool mayRunMore() const { return _or ? !_fros.orFinished() : _i == 0; }
         BSONObj oldExplain() const { assertNotOr(); return _currentQps->explain(); }
         // just report this when only one query op
         bool usingPrerecordedPlan() const {
@@ -274,15 +274,16 @@ namespace mongo {
         void assertNotOr() const {
             massert( 13266, "not implemented for $or query", !_or );
         }
+        bool uselessOr( const BSONElement &hint ) const;
         const char * _ns;
         bool _or;
         BSONObj _query;
         FieldRangeOrSet _fros;
         auto_ptr< QueryPlanSet > _currentQps;
         int _i;
-        int _n;
         bool _honorRecordedPlan;
         bool _bestGuessOnly;
+        BSONObj _hint;
     };
     
     class MultiCursor : public Cursor {
@@ -315,6 +316,10 @@ namespace mongo {
         MultiCursor( auto_ptr< MultiPlanScanner > mps, const shared_ptr< Cursor > &c, const shared_ptr< CoveredIndexMatcher > &matcher, const QueryOp &op )
         : _op( new NoOp( op ) ), _c( c ), _mps( mps ), _matcher( matcher ) {
             _mps->setBestGuessOnly();
+            if ( !ok() ) {
+                // would have been advanced by UserQueryOp if possible
+                advance();
+            }
         }
         virtual bool ok() { return _c->ok(); }
         virtual Record* _current() { return _c->_current(); }
@@ -329,12 +334,11 @@ namespace mongo {
         }
         virtual BSONObj currKey() const { return _c->currKey(); }
         virtual DiskLoc refLoc() { return _c->refLoc(); }
-        virtual void noteLocation() { _c->noteLocation(); }
+        virtual void noteLocation() {
+            _c->noteLocation();
+        }
         virtual void checkLocation() {
             _c->checkLocation();
-            if ( !ok() ) {
-                advance();
-            }
         }        
         virtual bool supportGetMore() { return true; }
         // with update we could potentially get the same document on multiple
@@ -360,7 +364,8 @@ namespace mongo {
         };
         void nextClause() {
             shared_ptr< CursorOp > best = _mps->runOpOnce( *_op );
-            massert( 10401 , best->exceptionMessage(), best->complete() );
+            if ( ! best->complete() )
+                throw MsgAssertionException( best->exception() );
             _c = best->newCursor();
             _matcher = best->matcher();
             _op = best;

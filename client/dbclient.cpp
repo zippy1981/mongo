@@ -252,7 +252,7 @@ namespace mongo {
         return ok;
     }
 
-    bool DBClientWithCommands::createCollection(const string &ns, unsigned size, bool capped, int max, BSONObj *info) {
+    bool DBClientWithCommands::createCollection(const string &ns, long long size, bool capped, int max, BSONObj *info) {
         BSONObj o;
         if ( info == 0 )	info = &o;
         BSONObjBuilder b;
@@ -369,7 +369,7 @@ namespace mongo {
         
         string db = nsGetDB( ns ) + ".system.namespaces";
         BSONObj q = BSON( "name" << ns );
-        return count( db.c_str() , q );
+        return count( db.c_str() , q ) != 0;
     }
 
 
@@ -537,6 +537,40 @@ namespace mongo {
         if ( c->init() )
             return c;
         return auto_ptr< DBClientCursor >( 0 );
+    }
+
+    unsigned long long DBClientConnection::query( boost::function<void(const BSONObj&)> f, const string& ns, Query query, const BSONObj *fieldsToReturn ) {
+        unsigned long long n = 0;
+
+        try { 
+
+            auto_ptr<DBClientCursor> c(  
+              this->query(ns, query, 0, 0, fieldsToReturn, (int) QueryOption_Exhaust) );
+
+            while( 1 ) { 
+                while( c->moreInCurrentBatch() ) { 
+                    BSONObj o = c->nextSafe();
+                    f(o);
+                    n++;
+                }
+
+                if( c->getCursorId() == 0 ) 
+                    break;
+
+                c->exhaustReceiveMore();
+            }
+
+        }
+        catch(std::exception&) { 
+            /* connection CANNOT be used anymore as more data may be on the way from the server.
+               we have to reconnect.
+               */
+            failed = true;
+            p->shutdown();
+            throw;
+        }
+
+        return n;
     }
 
     void DBClientBase::insert( const string & ns , BSONObj obj ) {
@@ -742,6 +776,10 @@ namespace mongo {
         port().piggyBack( toSend );
     }
 
+    void DBClientConnection::recv( Message &m ) { 
+        port().recv(m);
+    }
+
     bool DBClientConnection::call( Message &toSend, Message &response, bool assertOk ) {
         /* todo: this is very ugly messagingport::call returns an error code AND can throw 
                  an exception.  we should make it return void and just throw an exception anytime 
@@ -766,6 +804,7 @@ namespace mongo {
         /* check for errors.  the only one we really care about at
          this stage is "not master" */
         if ( clientPaired && nReturned ) {
+            assert(data);
             BSONObj o(data);
             BSONElement e = o.firstElement();
             if ( strcmp(e.fieldName(), "$err") == 0 &&

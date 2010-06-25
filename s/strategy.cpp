@@ -60,8 +60,7 @@ namespace mongo {
         }
         catch ( AssertionException& e ) {
             BSONObjBuilder err;
-            err.append("$err", string("mongos: ") + (e.msg.empty() ? "assertion during query" : e.msg));
-            err.append("code",e.getCode());
+            e.getInfo().append( err );
             BSONObj errObj = err.done();
             replyToQuery(QueryResult::ResultFlag_ErrSet, r.p() , r.m() , errObj);
         }
@@ -222,9 +221,13 @@ namespace mongo {
         cmdBuilder.appendOID( "serverID" , &serverID );
         if ( authoritative )
             cmdBuilder.appendBool( "authoritative" , 1 );
+
+        Shard s = Shard::make( conn.getServerAddress() );
+        cmdBuilder.append( "shard" , s.getName() );
+        cmdBuilder.append( "shardHost" , s.getConnString() );
         BSONObj cmd = cmdBuilder.obj();
         
-        log(1) << "    setShardVersion  " << conn.getServerAddress() << "  " << ns << "  " << cmd << " " << &conn << endl;
+        log(1) << "    setShardVersion  " << s.getName() << " " << conn.getServerAddress() << "  " << ns << "  " << cmd << " " << &conn << endl;
         
         return conn.runCommand( "admin" , cmd , result );
     }

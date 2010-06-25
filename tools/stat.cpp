@@ -51,6 +51,8 @@ namespace mongo {
                 ;
 
             addPositionArg( "sleep" , 1 );
+
+            _autoreconnect = true;
         }
 
         virtual void printExtraHelp( ostream & out ){
@@ -149,19 +151,26 @@ namespace mongo {
                 }
             }
 
-			if ( b["backgroundFlushing"].type() == Object ){
+	    if ( b["backgroundFlushing"].type() == Object ){
                 BSONObj ax = a["backgroundFlushing"].embeddedObject();
                 BSONObj bx = b["backgroundFlushing"].embeddedObject();
                 BSONObjIterator i( bx );
                 cell( ss , "flushes/s" , 6 , (int)diff( "flushes" , ax , bx ) );
             }
 
-			if ( b.getFieldDotted("mem.supported").trueValue() ){
+            if ( b.getFieldDotted("mem.supported").trueValue() ){
                 BSONObj bx = b["mem"].embeddedObject();
                 BSONObjIterator i( bx );
                 cell( ss , "mapped" , 6 , bx["mapped"].numberInt() );
                 cell( ss , "vsize" , 6 , bx["virtual"].numberInt() );
                 cell( ss , "res" , 6 , bx["resident"].numberInt() );
+            }
+
+            if ( b["extra_info"].type() == Object ){
+                BSONObj ax = a["extra_info"].embeddedObject();
+                BSONObj bx = b["extra_info"].embeddedObject();
+                if ( ax["page_faults"].type() || ax["page_faults"].type() )
+                    cell( ss , "faults/s" , 6 , (int)diff( "page_faults" , ax , bx ) );
             }
             
             cell( ss , "% locked" , 8 , percent( "globalLock.totalTime" , "globalLock.lockTime" , a , b ) );
@@ -210,7 +219,15 @@ namespace mongo {
 
             while ( _rowCount == 0 || _rowNum < _rowCount ){
                 sleepsecs(_sleep);
-                BSONObj now = stats();
+                BSONObj now;
+                try {
+                    now = stats();
+                }
+                catch ( std::exception& e ){
+                    cout << "can't get data: " << e.what() << endl;
+                    continue;
+                }
+
                 if ( now.isEmpty() )
                     return -2;
                 

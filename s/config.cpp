@@ -39,6 +39,11 @@ namespace mongo {
     string ShardNS::mongos = "config.mongos";
     string ShardNS::settings = "config.settings";
 
+    BSONField<bool>      ShardFields::draining("draining");
+    BSONField<long long> ShardFields::maxSize ("maxSize");
+    BSONField<long long> ShardFields::currSize("currSize");
+
+
     /* --- DBConfig --- */
 
     string DBConfig::modelServer() {
@@ -323,6 +328,7 @@ namespace mongo {
                         log() << "\t put [" << database << "] on: " << cc->_primary.toString() << endl;
                     }
                     else {
+                        cc.reset();
                         log() << "\t can't find a shard to put new db on" << endl;
                         uassert( 10185 ,  "can't find a shard to put new db on" , 0 );
                     }
@@ -480,6 +486,7 @@ namespace mongo {
         
         // indexes
         conn->ensureIndex( ShardNS::chunk , BSON( "ns" << 1 << "min" << 1 ) , true );
+        conn->ensureIndex( ShardNS::chunk , BSON( "ns" << 1 << "shard" << 1 << "min" << 1 ) , true );
         conn->ensureIndex( ShardNS::shard , BSON( "host" << 1 ) , true );
 
         conn.done();

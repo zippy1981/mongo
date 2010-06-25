@@ -21,44 +21,65 @@
 #include "../pch.h"
 #include "../util/background.h"
 #include "../client/dbclient.h"
+#include "balancer_policy.h"
 
 namespace mongo {
     
     class Balancer : public BackgroundJob {
     public:
-        string name() { return "Balancer"; }
         Balancer();
-        
-        void run();
+        virtual ~Balancer();
+
+        // BackgroundJob methods
+
+        virtual void run();
+
+        virtual string name() { return "Balancer"; }        
 
     private:
-        bool shouldIBalance( DBClientBase& conn );
+        typedef BalancerPolicy::ChunkInfo CandidateChunk;
+        typedef shared_ptr<CandidateChunk> CandidateChunkPtr;
+
+        /**
+         * Returns true iff this mongos process gained (or maintained) the
+         * reponsibility moving chunks around.
+         */
+        bool _shouldIBalance( DBClientBase& conn );
         
+        /**
+         * Gathers all the necessary information about shards and chunks, and 
+         * decides whether there are candidate chunks to be moved.
+         */
+        void _doBalanceRound( DBClientBase& conn, vector<CandidateChunkPtr>* candidateChunks );
+
+        /**
+         * Execute the chunk migrations described in 'candidateChunks' and
+         * returns the number of chunks effectively moved.
+         */
+        int _moveChunks( const vector<CandidateChunkPtr>* candidateChunks );
+
+        /**
+         * Check the health of the master configuration server
+         */
+        void _ping();
+        void _ping( DBClientBase& conn );
+
         /**
          * @return true if everything is ok
          */
-        bool checkOIDs();
+        bool _checkOIDs();
 
-        /**
-         * Execute the chunk migrations described in 'toBalance'
-         */
-        struct ChunkInfo;
-        typedef shared_ptr<ChunkInfo> ChunkInfoPtr;
-        void _moveChunks( const vector<ChunkInfoPtr>* toBalance );
+        // internal state
 
-        /**
-         * TODO: take out space-based policy
-         */
-        void balance( DBClientBase& conn , vector<ChunkInfoPtr>* toBalance );
-        void balance( DBClientBase& conn , const string& ns , const BSONObj& data , vector<ChunkInfoPtr>* toBalance );
-        BSONObj pickChunk( vector<BSONObj>& from, vector<BSONObj>& to );
+        string          _myid;             // hostname:port of my mongos
+        time_t          _started;          // time Balancer starte running
+        int             _balancedLastTime; // number of moved chunks in last round
+        BalancerPolicy* _policy;           // decide which chunks to move; owned here.
 
-        void ping();
-        void ping( DBClientBase& conn );
+        // non-copyable, non-assignable
 
-        string _myid;
-        time_t _started;
-        int _balancedLastTime;
+        Balancer(const Balancer&);
+        Balancer operator=(const Balancer&);
     };
     
     extern Balancer balancer;

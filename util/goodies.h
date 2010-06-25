@@ -32,7 +32,7 @@ namespace mongo {
         return s.str();
     }
 
-#if !defined(_WIN32) && !defined(NOEXECINFO) && !defined(__freebsd__) && !defined(__sun__)
+#if !defined(_WIN32) && !defined(NOEXECINFO) && !defined(__freebsd__) && !defined(__openbsd__) && !defined(__sun__)
 
 } // namespace mongo
 
@@ -623,7 +623,7 @@ namespace mongo {
         }
 
         bool operator!=( const char * str ) const {
-            return strcmp( _buf , str );
+            return strcmp( _buf , str ) != 0;
         }
 
         bool empty() const {

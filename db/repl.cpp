@@ -1670,23 +1670,31 @@ namespace mongo {
     static void replMasterThread() {
         sleepsecs(4);
         Client::initThread("replmaster");
+        int toSleep = 10;
         while( 1 ) {
-            {
-                dblock lk;
-                cc().getAuthenticationInfo()->authorize("admin");   
-            }
-            sleepsecs(10);
+
+            sleepsecs( toSleep );
             /* write a keep-alive like entry to the log.  this will make things like 
                printReplicationStatus() and printSlaveReplicationStatus() stay up-to-date
                even when things are idle.
             */
             {
-                writelock lk("");
-                try { 
-                    logKeepalive();
+                writelocktry lk("",1);
+                if ( lk.got() ){
+                    toSleep = 10;
+                    
+                    cc().getAuthenticationInfo()->authorize("admin");   
+                        
+                    try { 
+                        logKeepalive();
+                    }
+                    catch(...) { 
+                        log() << "caught exception in replMasterThread()" << endl;
+                    }
                 }
-                catch(...) { 
-                    log() << "caught exception in replMasterThread()" << endl;
+                else {
+                    log(5) << "couldn't logKeepalive" << endl;
+                    toSleep = 1;
                 }
             }
         }

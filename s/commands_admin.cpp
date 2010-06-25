@@ -197,7 +197,8 @@ namespace mongo {
         public:
             MoveDatabasePrimaryCommand() : GridAdminCmd("moveprimary") { }
             virtual void help( stringstream& help ) const {
-                help << " example: { moveprimary : 'foo' , to : 'localhost:9999' } TODO: locking? ";
+                help << " example: { moveprimary : 'foo' , to : 'localhost:9999' }";
+                // TODO: locking?
             }
             bool run(const string& , BSONObj& cmdObj, string& errmsg, BSONObjBuilder& result, bool){
                 string dbname = cmdObj["moveprimary"].valuestrsafe();
@@ -589,7 +590,6 @@ namespace mongo {
             bool run(const string& , BSONObj& cmdObj, string& errmsg, BSONObjBuilder& result, bool){
                 ScopedDbConnection conn( configServer.getPrimary() );
                 
-                
                 string host = cmdObj["addshard"].valuestrsafe();
                 
                 if ( host == "localhost" || host.find( "localhost:" ) == 0 ||
@@ -624,8 +624,8 @@ namespace mongo {
                     BSONObjBuilder b;
                     b.append( "_id" , name );
                     b.append( "host" , host );
-                    if ( cmdObj["maxSize"].isNumber() )
-                        b.append( cmdObj["maxSize"] );
+                    if ( cmdObj[ ShardFields::maxSize.name() ].isNumber() )
+                        b.append( cmdObj[ ShardFields::maxSize.name() ] );
                     shard = b.obj();
                 }
 
@@ -669,19 +669,80 @@ namespace mongo {
         public:
             RemoveShardCmd() : GridAdminCmd("removeshard") { }
             virtual void help( stringstream& help ) const {
-                help << "remove a shard to the system.\nshard must be empty or command will return an error.";
+                help << "remove a shard to the system.";
             }
             bool run(const string& , BSONObj& cmdObj, string& errmsg, BSONObjBuilder& result, bool){
-                if ( 1 ){
+                if ( ! cmdObj["forTestingOnly"].trueValue() ){
                     errmsg = "removeshard not yet implemented";
-                    return 0;
+                    return false;
+                }
+
+                string shard = cmdObj["removeshard"].valuestrsafe();
+                if ( ! grid.knowAboutShard( shard ) ){
+                    errmsg = "that server isn't known to me";
+                    return false;
                 }
 
                 ScopedDbConnection conn( configServer.getPrimary() );
 
-                BSONObj server = BSON( "host" << cmdObj["removeshard"].valuestrsafe() );
-                conn->remove( "config.shards" , server );
+                // If the server is not yet draining chunks, put it in draining mode.
+                BSONObj searchDoc = BSON( "host" << shard );
+                BSONObj drainingDoc = BSON( "host" << shard << ShardFields::draining(true) );
+                BSONObj shardDoc = conn->findOne( "config.shards", drainingDoc );
+                if ( shardDoc.isEmpty() ){
 
+                    // TODO prevent move chunks to this shard.
+
+                    log() << "going to start draining shard: " << shard << endl;
+                    BSONObj newStatus = BSON( "$set" << BSON( ShardFields::draining(true) ) );
+                    conn->update( "config.shards" , searchDoc , newStatus, false /* do no upsert */);
+
+                    errmsg = conn->getLastError();
+                    if ( errmsg.size() ){
+                        log() << "error starting remove shard: " << shard << " err: " << errmsg << endl;
+                        return false;
+                    }
+
+                    result.append( "started draining" , shard );
+                    conn.done();
+                    Shard::reloadShardInfo();
+                    return true;
+                }
+
+                // If the server has been completely drained, remove it from the ConfigDB.
+                // Check not only for chunks but also databases.
+                BSONObj shardIDDoc = BSON( "shard" << shardDoc[ "_id" ].str() );
+                unsigned long long chunkCount = conn->count( "config.chunks" , shardIDDoc );
+                BSONObj primaryDoc = BSON( "primary" << shardDoc[ "_id" ].str() );
+                unsigned long long dbCount = conn->count( "config.databases" , primaryDoc );
+                if ( ( chunkCount == 0 ) && ( dbCount == 0 ) ){
+                    log() << "going to remove shard: " << shard << endl;                    
+                    conn->remove( "config.shards" , searchDoc );
+
+                    errmsg = conn->getLastError();
+                    if ( errmsg.size() ){
+                        log() << "error concluding remove shard: " << shard << " err: " << errmsg << endl;
+                        return false;
+                    }
+
+                    result.append( "shard removed" , shard );
+                    conn.done();
+                    Shard::reloadShardInfo();
+                    return true;
+                }
+
+                // If the server is already in draining mode, just report on its progress.
+                // Report on databases (not just chunks) that are left too.
+                ostringstream os;
+                os << "already draining. ";
+                if ( chunkCount > 0 ){
+                    os << chunkCount << " chunks left. ";
+                }
+                if ( dbCount > 0 ){
+                    os << dbCount << " databases left." << endl;
+                    os << " Use the 'moveprimary' command to remove those." << endl;
+                } 
+                result.append( "msg" , os.str() );
                 conn.done();
                 return true;
             }
@@ -800,6 +861,7 @@ namespace mongo {
                     bool ok = conn->runCommand( dbName , cmdObj , res );
                     result.appendElements( res );
                     conn.done();
+                    result.append( "singleShard" , theShard );
                     
                     // hit other machines just to block
                     for ( set<string>::const_iterator i=client->sinceLastGetError().begin(); i!=client->sinceLastGetError().end(); ++i ){
@@ -815,19 +877,29 @@ namespace mongo {
                     return ok;
                 }
                 
+                BSONArrayBuilder bbb( result.subarrayStart( "shards" ) );
+
+                long long n = 0;
+
                 // hit each shard
                 vector<string> errors;
                 for ( set<string>::iterator i = shards->begin(); i != shards->end(); i++ ){
                     string theShard = *i;
+                    bbb.append( theShard );
                     ShardConnection conn( theShard , "" );
                     BSONObj res;
                     bool ok = conn->runCommand( dbName , cmdObj , res );
                     string temp = DBClientWithCommands::getLastErrorString( res );
                     if ( ok == false || temp.size() )
                         errors.push_back( temp );
+                    n += res["n"].numberLong();
                     conn.done();
                 }
                 
+                bbb.done();
+                
+                result.appendNumber( "n" , n );
+
                 // hit other machines just to block
                 for ( set<string>::const_iterator i=client->sinceLastGetError().begin(); i!=client->sinceLastGetError().end(); ++i ){
                     string temp = *i;

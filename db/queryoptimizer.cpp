@@ -263,6 +263,38 @@ namespace mongo {
         plans_.push_back( PlanPtr( new QueryPlan( d, d->idxNo(id), *fbs_, _originalQuery, order_, min_, max_ ) ) );
     }
     
+    // returns an IndexDetails * for a hint, 0 if hint is $natural.
+    // hint must not be eoo()
+    IndexDetails *parseHint( const BSONElement &hint, NamespaceDetails *d ) {
+        massert( 13292, "hint eoo", !hint.eoo() );
+        if( hint.type() == String ) {
+            string hintstr = hint.valuestr();
+            NamespaceDetails::IndexIterator i = d->ii();
+            while( i.more() ) {
+                IndexDetails& ii = i.next();
+                if ( ii.indexName() == hintstr ) {
+                    return &ii;
+                }
+            }
+        }
+        else if( hint.type() == Object ) { 
+            BSONObj hintobj = hint.embeddedObject();
+            uassert( 10112 ,  "bad hint", !hintobj.isEmpty() );
+            if ( !strcmp( hintobj.firstElement().fieldName(), "$natural" ) ) {
+                return 0;
+            }
+            NamespaceDetails::IndexIterator i = d->ii();
+            while( i.more() ) {
+                IndexDetails& ii = i.next();
+                if( ii.keyPattern().woCompare(hintobj) == 0 ) {
+                    return &ii;
+                }
+            }
+        }        
+        uassert( 10113 ,  "bad hint", false );
+        return 0;
+    }
+    
     void QueryPlanSet::init() {
         DEBUGQO( "QueryPlanSet::init " << ns << "\t" << _originalQuery );
         plans_.clear();
@@ -280,36 +312,15 @@ namespace mongo {
         BSONElement hint = hint_.firstElement();
         if ( !hint.eoo() ) {
             mayRecordPlan_ = false;
-            if( hint.type() == String ) {
-                string hintstr = hint.valuestr();
-                NamespaceDetails::IndexIterator i = d->ii();
-                while( i.more() ) {
-                    IndexDetails& ii = i.next();
-                    if ( ii.indexName() == hintstr ) {
-                        addHint( ii );
-                        return;
-                    }
-                }
+            IndexDetails *id = parseHint( hint, d );
+            if ( id ) {
+                addHint( *id );
+            } else {
+                massert( 10366 ,  "natural order cannot be specified with $min/$max", min_.isEmpty() && max_.isEmpty() );
+                // Table scan plan
+                plans_.push_back( PlanPtr( new QueryPlan( d, -1, *fbs_, _originalQuery, order_ ) ) );                
             }
-            else if( hint.type() == Object ) { 
-                BSONObj hintobj = hint.embeddedObject();
-                uassert( 10112 ,  "bad hint", !hintobj.isEmpty() );
-                if ( !strcmp( hintobj.firstElement().fieldName(), "$natural" ) ) {
-                    massert( 10366 ,  "natural order cannot be specified with $min/$max", min_.isEmpty() && max_.isEmpty() );
-                    // Table scan plan
-                    plans_.push_back( PlanPtr( new QueryPlan( d, -1, *fbs_, _originalQuery, order_ ) ) );
-                    return;
-                }
-                NamespaceDetails::IndexIterator i = d->ii();
-                while( i.more() ) {
-                    IndexDetails& ii = i.next();
-                    if( ii.keyPattern().woCompare(hintobj) == 0 ) {
-                        addHint( ii );
-                        return;
-                    }
-                }
-            }
-            uassert( 10113 ,  "bad hint", false );
+            return;
         }
         
         if ( !min_.isEmpty() || !max_.isEmpty() ) {
@@ -399,7 +410,7 @@ namespace mongo {
             return;
         }
         
-        bool normalQuery = hint_.isEmpty() && min_.isEmpty() && max_.isEmpty() && _originalQuery.getField( "$or" ).eoo();
+        bool normalQuery = hint_.isEmpty() && min_.isEmpty() && max_.isEmpty();
 
         PlanSet plans;
         for( int i = 0; i < d->nIndexes; ++i ) {
@@ -558,10 +569,15 @@ namespace mongo {
     void QueryPlanSet::Runner::initOp( QueryOp &op ) {
         try {
             op.init();
-        } catch ( const std::exception &e ) {
-            op.setExceptionMessage( e.what() );
-        } catch ( ... ) {
-            op.setExceptionMessage( "Caught unknown exception" );
+        } 
+        catch ( DBException& e ){
+            op.setException( e.getInfo() );
+        }
+        catch ( const std::exception &e ) {
+            op.setException( ExceptionInfo( e.what() , 0 ) );
+        } 
+        catch ( ... ) {
+            op.setException( ExceptionInfo( "Caught unknown exception" , 0 ) );
         }        
     }
 
@@ -569,11 +585,16 @@ namespace mongo {
         try {
             if ( !op.error() )
                 op.next();
-        } catch ( const std::exception &e ) {
-            op.setExceptionMessage( e.what() );
-        } catch ( ... ) {
-            op.setExceptionMessage( "Caught unknown exception" );
-        }        
+        } 
+        catch ( DBException& e ){
+            op.setException( e.getInfo() );
+        }
+        catch ( const std::exception &e ) {
+            op.setException( ExceptionInfo( e.what() , 0 ) );
+        } 
+        catch ( ... ) {
+            op.setException( ExceptionInfo( "Caught unknown exception" , 0 ) );
+        } 
     }
     
     MultiPlanScanner::MultiPlanScanner( const char *ns,
@@ -589,20 +610,22 @@ namespace mongo {
     _fros( ns, _query ),
     _i(),
     _honorRecordedPlan( honorRecordedPlan ),
-    _bestGuessOnly() {
-        // TODO add special/type check
-        // eventually implement (some of?) these
-        if ( !order.isEmpty() || ( hint && !hint->eoo() ) || !min.isEmpty() || !max.isEmpty() ) {
+    _bestGuessOnly(),
+    _hint( ( hint && !hint->eoo() ) ? hint->wrap() : BSONObj() )
+    {
+        if ( !order.isEmpty() || !min.isEmpty() || !max.isEmpty() || !_fros.getSpecial().empty() ) {
             _or = false;
         }
+        if ( _or && uselessOr( _hint.firstElement() ) ) {
+            _or = false;
+        }
+        // if _or == false, don't use or clauses for index selection
         if ( !_or ) {
             auto_ptr< FieldRangeSet > frs( new FieldRangeSet( ns, _query ) );
             _currentQps.reset( new QueryPlanSet( ns, frs, _query, order, hint, honorRecordedPlan, min, max ) );
-            _n = 1; // only one run
         } else {
             BSONElement e = _query.getField( "$or" );
             massert( 13268, "invalid $or spec", e.type() == Array && e.embeddedObject().nFields() > 0 );
-            _n = e.embeddedObject().nFields();
         }
     }
 
@@ -612,13 +635,20 @@ namespace mongo {
             ++_i;
             return _currentQps->runOp( op );
         }
-        if ( _i != 0 ) {
-            _fros.popOrClause();            
-        }
         ++_i;
         auto_ptr< FieldRangeSet > frs( _fros.topFrs() );
-        _currentQps.reset( new QueryPlanSet( _ns, frs, _query, BSONObj(), 0, _honorRecordedPlan ) );
+        BSONElement hintElt = _hint.firstElement();
+        _currentQps.reset( new QueryPlanSet( _ns, frs, _query, BSONObj(), &hintElt, _honorRecordedPlan ) );
         shared_ptr< QueryOp > ret( _currentQps->runOp( op ) );
+        BSONObj selectedIndexKey = ret->qp().indexKey();
+        const char *first = 0;
+        const char *second = 0;
+        BSONObjIterator i( selectedIndexKey );
+        first = i.next().fieldName();
+        if ( i.more() ) {
+            second = i.next().fieldName();
+        }
+        _fros.popOrClause( first, second );
         return ret;
     }
     
@@ -628,7 +658,44 @@ namespace mongo {
             ret = runOpOnce( *ret );
         }
         return ret;
-    }    
+    }
+    
+    bool MultiPlanScanner::uselessOr( const BSONElement &hint ) const {
+        NamespaceDetails *nsd = nsdetails( _ns );
+        if ( !nsd ) {
+            return true;
+        }
+        IndexDetails *id = 0;
+        if ( !hint.eoo() ) {
+            IndexDetails *id = parseHint( hint, nsd );
+            if ( !id ) {
+                return true;
+            }
+        }
+        vector< BSONObj > ret;
+        _fros.allClausesSimplified( ret );
+        for( vector< BSONObj >::const_iterator i = ret.begin(); i != ret.end(); ++i ) {
+            if ( id ) {
+                if ( id->getSpec().suitability( *i, BSONObj() ) == USELESS ) {
+                    return true;
+                }
+            } else {
+                bool useful = false;
+                NamespaceDetails::IndexIterator j = nsd->ii();
+                while( j.more() ) {
+                    IndexDetails &id = j.next();
+                    if ( id.getSpec().suitability( *i, BSONObj() ) != USELESS ) {
+                        useful = true;
+                        break;
+                    }
+                }
+                if ( !useful ) {
+                    return true;
+                }       
+            }
+        }
+        return false;
+    }
     
     bool indexWorks( const BSONObj &idxPattern, const BSONObj &sampleKey, int direction, int firstSignificantField ) {
         BSONObjIterator p( idxPattern );

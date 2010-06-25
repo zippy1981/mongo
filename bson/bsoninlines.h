@@ -244,17 +244,26 @@ namespace mongo {
     extern unsigned getRandomNumber();
 
     inline void BSONElement::validate() const {
-        switch( type() ) {
+        const BSONType t = type();
+        
+        switch( t ) {
         case DBRef:
         case Code:
         case Symbol:
         case mongo::String: {
             int x = valuestrsize();
+            if ( t == mongo::String && x + fieldNameSize() + 5 != size() ){
+                StringBuilder buf;
+                buf << "Invalid string size.   element size: " << size() << " fieldNameSize: " << fieldNameSize() << " valuestrsize(): " << valuestrsize();
+                cout << "ELIOT : " << buf.str() << endl;
+                msgasserted( 13292 , buf.str() );
+            }
+
             if ( x > 0 && valuestr()[x-1] == 0 )
                 return;
             StringBuilder buf;
             buf <<  "Invalid dbref/code/string/symbol size: " << x << " strnlen:" << strnlen( valuestr() , x );
-            massert( 10321 , buf.str() , 0 );
+            msgasserted( 10321 , buf.str() );
             break;
         }
         case CodeWScope: {
@@ -563,4 +572,11 @@ namespace mongo {
     }
 
     inline void BSONElement::Val(BSONObj& v) const { v = Obj(); }
+
+    template<typename T>
+    inline BSONFieldValue<BSONObj> BSONField<T>::query( const char * q , const T& t ) const {
+        BSONObjBuilder b;
+        b.append( q , t );
+        return BSONFieldValue<BSONObj>( _name , b.obj() );
+    }
 }

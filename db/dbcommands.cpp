@@ -339,6 +339,7 @@ namespace mongo {
 
             result.append("version", versionString);
             result.append("uptime",(double) (time(0)-started));
+            result.append("uptimeEstimate",(double) (Listener::getElapsedTimeMillis()/1000));
             result.appendDate( "localTime" , jsTime() );
 
             {
@@ -918,8 +919,8 @@ namespace mongo {
                     }
 
                     int len;
-                    const char * data = obj["data"].binData( len );
-                    md5_append( &st , (const md5_byte_t*)(data + 4) , len - 4 );
+                    const char * data = obj["data"].binDataClean( len );
+                    md5_append( &st , (const md5_byte_t*)(data) , len );
 
                     n++;
                 } catch (...) {
@@ -1108,8 +1109,14 @@ namespace mongo {
             result.append( "ns" , ns.c_str() );
             
             int scale = 1;
-            if ( jsobj["scale"].isNumber() )
+            if ( jsobj["scale"].isNumber() ){
                 scale = jsobj["scale"].numberInt();
+                if ( scale <= 0 ){
+                    errmsg = "scale has to be > 0";
+                    return false;
+                }
+                    
+            }
 
             result.appendNumber( "count" , nsd->nrecords );
             result.appendNumber( "size" , nsd->datasize / scale );

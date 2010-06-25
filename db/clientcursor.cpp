@@ -191,16 +191,34 @@ namespace mongo {
         DiskLoc cl = c->refLoc();
         if ( lastLoc() == cl ) {
             //log() << "info: lastloc==curloc " << ns << '\n';
-            return;
-        }
-        {
+        } else {
             recursive_scoped_lock lock(ccmutex);
             setLastLoc_inlock(cl);
-            c->noteLocation();
         }
+        // may be necessary for MultiCursor even when cl hasn't changed
+        c->noteLocation();
     }
     
-    bool ClientCursor::yield() {
+    bool ClientCursor::yieldSometimes(){
+        if ( ! _yieldSometimesTracker.ping() )
+            return true;
+
+        int writers = 0;
+        int readers = 0;
+
+        int micros = Client::recommendedYieldMicros( &writers , &readers );
+        if ( micros == 0 )
+            return true;
+        
+        if ( writers == 0 && dbMutex.getState() <= 0 ){
+            // we have a read lock, and only reads are coming on, so why bother unlocking
+            return true;
+        }
+        
+        return yield( micros );
+    }
+
+    bool ClientCursor::yield( int micros ) {
         // need to store on the stack in case this gets deleted
         CursorId id = cursorid;
 
@@ -233,12 +251,17 @@ namespace mongo {
             
         {
             dbtempreleasecond unlock;
-            if ( unlock.unlocked() )
-                sleepmicros( Client::recommendedYieldMicros() );
-            else
+            if ( unlock.unlocked() ){
+                if ( micros == -1 )
+                    micros = Client::recommendedYieldMicros();
+                if ( micros > 0 )
+                    sleepmicros( micros ); 
+            }
+            else {
                 log() << "ClientCursor::yield can't unlock b/c of recursive lock" << endl;
+            }
         }
-
+        
         if ( ClientCursor::find( id , false ) == 0 ){
             // i was deleted
             return false;

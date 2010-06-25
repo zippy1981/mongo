@@ -17,6 +17,8 @@
 
 #pragma once
 
+#include "../bson/oid.h"
+
 namespace mongo {
     class BSONObjBuilder;
     class Message;
@@ -25,7 +27,7 @@ namespace mongo {
         int code;
         string msg;
         enum UpdatedExistingType { NotUpdate, True, False } updatedExisting;
-        /* todo: nObjects should be 64 bit */
+        OID upsertedId;
         long long nObjects;
         int nPrev;
         bool valid;
@@ -36,10 +38,13 @@ namespace mongo {
             code = _code;
             msg = _msg;
         }
-        void recordUpdate( bool _updatedExisting, long long nChanged ) {
+        void recordUpdate( bool _updateObjects , long long _nObjects , OID _upsertedId ){
             reset( true );
-            nObjects = nChanged;
-            updatedExisting = _updatedExisting ? True : False;
+            nObjects = _nObjects;
+            updatedExisting = _updateObjects ? True : False;
+            if ( _upsertedId.isSet() )
+                upsertedId = _upsertedId;
+                
         }
         void recordDelete( long long nDeleted ) {
             reset( true );
@@ -57,6 +62,7 @@ namespace mongo {
             nPrev = 1;
             valid = _valid;
             disabled = false;
+            upsertedId.clear();
         }
         void appendSelf( BSONObjBuilder &b );
         static LastError noError;
@@ -67,6 +73,11 @@ namespace mongo {
         LastErrorHolder() : _id( 0 ) {}
 
         LastError * get( bool create = false );
+        LastError * getSafe(){
+            LastError * le = get(false);
+            assert( le );
+            return le;
+        }
 
         LastError * _get( bool create = false ); // may return a disabled LastError
 
@@ -105,28 +116,6 @@ namespace mongo {
         map<int,Status> _ids;    
     } lastError;
     
-    inline void raiseError(int code , const char *msg) {
-        LastError *le = lastError.get();
-        if ( le == 0 ) {
-            /* might be intentional (non-user thread) */
-            DEV log() << "warning dev: lastError==0 won't report:" << msg << endl;
-        } else if ( le->disabled ) {
-            log() << "lastError disabled, can't report: " << msg << endl;
-        } else {
-            le->raiseError(code, msg);
-        }
-    }
-    
-    inline void recordUpdate( bool updatedExisting, int nChanged ) {
-        LastError *le = lastError.get();
-        if ( le )
-            le->recordUpdate( updatedExisting, nChanged );        
-    }
-
-    inline void recordDelete( int nDeleted ) {
-        LastError *le = lastError.get();
-        if ( le )
-            le->recordDelete( nDeleted );        
-    }
+    void raiseError(int code , const char *msg);
 
 } // namespace mongo

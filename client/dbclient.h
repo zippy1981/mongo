@@ -51,7 +51,7 @@ namespace mongo {
         // an extended period of time.
         QueryOption_OplogReplay = 1 << 3,
 
-        /** The server normally times out idle cursors after an inactivy period to prevent excess memory use
+        /** The server normally times out idle cursors after an inactivy period to prevent excess memory uses
             Set this option to prevent that. 
         */
         QueryOption_NoCursorTimeout = 1 << 4,
@@ -59,7 +59,13 @@ namespace mongo {
         /** Use with QueryOption_CursorTailable.  If we are at the end of the data, block for a while rather 
             than returning no data. After a timeout period, we do return as normal.
         */
-        QueryOption_AwaitData = 1 << 5
+        QueryOption_AwaitData = 1 << 5,
+
+        /** Stream the data down full blast in multiple "more" packages, on the assumption that the client 
+            will fully read all data queried.  Faster when you are pulling a lot of data and know you want to 
+            pull it all down.  Note: it is not allowed to not read all the data unless you close the connection.
+            */
+        QueryOption_Exhaust = 1 << 6
 
     };
 
@@ -207,7 +213,10 @@ namespace mongo {
         virtual bool call( Message &toSend, Message &response, bool assertOk=true ) = 0;
         virtual void say( Message &toSend ) = 0;
         virtual void sayPiggyBack( Message &toSend ) = 0;
-        virtual void checkResponse( const string &data, int nReturned ) {}
+        virtual void checkResponse( const char* data, int nReturned ) {}
+
+        /* used by QueryOption_Exhaust.  To use that your subclass must implement this. */
+        virtual void recv( Message& m ) { assert(false); }
     };
 
     /**
@@ -218,6 +227,7 @@ namespace mongo {
         virtual auto_ptr<DBClientCursor> query(const string &ns, Query query, int nToReturn = 0, int nToSkip = 0,
                                                const BSONObj *fieldsToReturn = 0, int queryOptions = 0 , int batchSize = 0 ) = 0;
 
+        /** don't use this - called automatically by DBClientCursor for you */
         virtual auto_ptr<DBClientCursor> getMore( const string &ns, long long cursorId, int nToReturn = 0, int options = 0 ) = 0;
         
         virtual void insert( const string &ns, BSONObj obj ) = 0;
@@ -305,17 +315,17 @@ namespace mongo {
 
            If the collection already exists, no action occurs.
 
-           ns:     fully qualified collection name
-            size:   desired initial extent size for the collection.
-                   Must be <= 1000000000 for normal collections.
-        		   For fixed size (capped) collections, this size is the total/max size of the
-        		   collection.
-           capped: if true, this is a fixed size collection (where old data rolls out).
-           max:    maximum number of objects if capped (optional).
+           @param ns     fully qualified collection name
+           @param size   desired initial extent size for the collection.
+                         Must be <= 1000000000 for normal collections.
+                         For fixed size (capped) collections, this size is the total/max size of the
+                         collection.
+           @param capped if true, this is a fixed size collection (where old data rolls out).
+           @param max    maximum number of objects if capped (optional).
 
            returns true if successful.
         */
-        bool createCollection(const string &ns, unsigned size = 0, bool capped = false, int max = 0, BSONObj *info = 0);
+        bool createCollection(const string &ns, long long size = 0, bool capped = false, int max = 0, BSONObj *info = 0);
 
         /** Get error result from the last operation on this connection. 
             @return error message text, or empty string if no error.
@@ -555,7 +565,6 @@ namespace mongo {
      abstract class that implements the core db operations
      */
     class DBClientBase : public DBClientWithCommands, public DBConnector {
-
     protected:
         WriteConcern _writeConcern;
 
@@ -584,12 +593,13 @@ namespace mongo {
         virtual auto_ptr<DBClientCursor> query(const string &ns, Query query, int nToReturn = 0, int nToSkip = 0,
                                                const BSONObj *fieldsToReturn = 0, int queryOptions = 0 , int batchSize = 0 );
 
-        /** @param cursorId id of cursor to retrieve
+        /** don't use this - called automatically by DBClientCursor for you
+            @param cursorId id of cursor to retrieve
             @return an handle to a previously allocated cursor
             @throws AssertionException
          */
         virtual auto_ptr<DBClientCursor> getMore( const string &ns, long long cursorId, int nToReturn = 0, int options = 0 );
-        
+
         /**
            insert an object into the database
          */
@@ -624,7 +634,7 @@ namespace mongo {
                     n++;
             return n;
         }
-    }; // end DBClientBase
+    }; // DBClientBase
     
     class DBClientPaired;
     
@@ -694,6 +704,10 @@ namespace mongo {
             return DBClientBase::query( ns, query, nToReturn, nToSkip, fieldsToReturn, queryOptions , batchSize );
         }
 
+        /** uses QueryOption_Exhaust 
+         */
+        unsigned long long query( boost::function<void(const BSONObj&)> f, const string& ns, Query query, const BSONObj *fieldsToReturn = 0);
+
         /**
            @return true if this connection is currently in a failed state.  When autoreconnect is on, 
                    a connection will transition back to an ok state after reconnecting.
@@ -724,6 +738,9 @@ namespace mongo {
         
         virtual void killCursor( long long cursorID );
 
+    protected:
+        friend class SyncClusterConnection;
+        virtual void recv( Message& m );
         virtual bool call( Message &toSend, Message &response, bool assertOk = true );
         virtual void say( Message &toSend );
         virtual void sayPiggyBack( Message &toSend );

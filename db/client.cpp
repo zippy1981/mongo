@@ -38,7 +38,8 @@ namespace mongo {
       _context(0),
       _shutdown(false),
       _desc(desc),
-      _god(0)
+      _god(0),
+      _lastOp(0)
     {
         _curOp = new CurOp( this );
         scoped_lock bl(clientsMutex);
@@ -315,20 +316,32 @@ namespace mongo {
     } handshakeCmd;
 
 
-    int Client::recommendedYieldMicros(){
+    int Client::recommendedYieldMicros( int * writers , int * readers ){
         int num = 0;
+        int w = 0;
+        int r = 0;
         {
             scoped_lock bl(clientsMutex);
-            num = clients.size();
+            for ( set<Client*>::iterator i=clients.begin(); i!=clients.end(); ++i ){
+                Client* c = *i;
+                if ( c->curop()->isWaitingForLock() ){
+                    num++;
+                    if ( c->curop()->getLockType() > 0 )
+                        w++;
+                    else
+                        r++;
+                }
+            }
         }
         
-        if ( --num <= 0 ) // -- is for myself
-            return 0;
-        
+        if ( writers )
+            *writers = w;
+        if ( readers )
+            *readers = r;
+
         if ( num > 50 )
             num = 50;
 
-        num *= 100;
-        return num;
+        return num * 100;
     }
 }

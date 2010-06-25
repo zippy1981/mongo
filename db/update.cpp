@@ -670,7 +670,7 @@ namespace mongo {
                 uassert( 10148 ,  "Mod on _id not allowed", strcmp( fieldName, "_id" ) != 0 );
                 uassert( 10149 ,  "Invalid mod field name, may not end in a period", fieldName[ strlen( fieldName ) - 1 ] != '.' );
                 uassert( 10150 ,  "Field name duplication not allowed with modifiers", ! haveModForField( fieldName ) );
-                uassert( 10151 ,  "have conflict mod" , ! haveConflictingMod( fieldName ) );
+                uassert( 10151 ,  "have conflicting mods in update" , ! haveConflictingMod( fieldName ) );
                 uassert( 10152 ,  "Modifier $inc allowed for numbers only", f.isNumber() || op != Mod::INC );
                 uassert( 10153 ,  "Modifier $pushAll/pullAll allowed for arrays only", f.type() == Array || ( op != Mod::PUSH_ALL && op != Mod::PULL_ALL ) );
                 
@@ -978,11 +978,10 @@ namespace mongo {
                 if ( profile )
                     ss << " fastmodinsert ";
                 theDataFileMgr.insertWithObjMod(ns, newObj, god);
-                if ( profile )
-                    ss << " fastmodinsert ";
                 if ( logop )
                     logOp( "i", ns, newObj );
-                return UpdateResult( 0 , 1 , 1 );
+                
+                return UpdateResult( 0 , 1 , 1 , newObj );
             }
             uassert( 10159 ,  "multi update only works with $ operators" , ! multi );
             checkNoMods( updateobj );
@@ -992,7 +991,7 @@ namespace mongo {
             theDataFileMgr.insertWithObjMod(ns, no, god);
             if ( logop )
                 logOp( "i", ns, no );
-            return UpdateResult( 0 , 0 , 1 );
+            return UpdateResult( 0 , 0 , 1 , no );
         }
         return UpdateResult( 0 , 0 , 0 );
     }

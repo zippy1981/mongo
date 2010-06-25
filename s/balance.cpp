@@ -31,21 +31,13 @@ namespace mongo {
     
     Balancer balancer;
 
-    struct Balancer::ChunkInfo {
-        const string ns;
-        const string to;
-        const string from;
-        const BSONObj chunk;
+    Balancer::Balancer() : _balancedLastTime(0), _policy( new BalancerPolicy ){}
 
-        ChunkInfo( const string& a_ns , const string& a_to , const string& a_from , const BSONObj& a_chunk )
-            : ns( a_ns ) , to( a_to ) , from( a_from ), chunk( a_chunk ){}
-    };
-
-    Balancer::Balancer(){
-        _balancedLastTime = 0;
+    Balancer::~Balancer() {
+        delete _policy;
     }
 
-    bool Balancer::shouldIBalance( DBClientBase& conn ){
+    bool Balancer::_shouldIBalance( DBClientBase& conn ){
         BSONObj x = conn.findOne( ShardNS::settings , BSON( "_id" << "balancer" ) );
         log(2) << "balancer: " << x << endl;
         
@@ -94,118 +86,13 @@ namespace mongo {
         x = conn.findOne( ShardNS::settings , BSON( "_id" << "balancer" ) );
         log() << "balancer: after update: " << x << endl;
         return _myid == x["who"].String() && incarnation == x["x"].OID();
-    }
-    
-    // TODO: Space-based policy starts here
-    void Balancer::balance( DBClientBase& conn, vector<ChunkInfoPtr>* toBalance ){
-        assert( toBalance );
-
-        log(1) << "i'm going to do some balancing" << endl;        
-        
-        auto_ptr<DBClientCursor> cursor = conn.query( ShardNS::database , BSON( "partitioned" << true ) );
-        while ( cursor->more() ){
-            BSONObj db = cursor->next();
-
-            // A database may be partitioned but not yet have a sharded collection. 
-            // 'cursor' will point to docs that do not contain the "sharded" key. Since 
-            // there'd be nothing to balance, we want to skip those here.
-
-            BSONElement shardedColls = db["sharded"];
-            if ( shardedColls.eoo() ){
-                log(2) << "balancer: skipping database with no sharded collection (" 
-                      << db["_id"].str() << ")" << endl;
-                continue;
-            }
-            
-            BSONObjIterator i( shardedColls.Obj() );
-            while ( i.more() ){
-                BSONElement e = i.next();
-                BSONObj data = e.Obj().getOwned();
-                string ns = e.fieldName();
-                balance( conn , ns , data , toBalance );
-            }
-        }
-    }
-
-    void Balancer::balance( DBClientBase& conn , const string& ns , const BSONObj& data , vector<ChunkInfoPtr>* toBalance ){
-        log(3) << "balancer: balance(" << ns << ")" << endl;
-
-        map< string,vector<BSONObj> > shards;
-        {
-            auto_ptr<DBClientCursor> cursor = conn.query( ShardNS::chunk , QUERY( "ns" << ns ).sort( "min" ) );
-            while ( cursor->more() ){
-                BSONObj chunk = cursor->next();
-                vector<BSONObj>& chunks = shards[chunk["shard"].String()];
-                chunks.push_back( chunk.getOwned() );
-            }
-        }
-        
-        if ( shards.size() == 0 )
-            return;
-        
-        {
-            vector<Shard> all;
-            Shard::getAllShards( all );
-            for ( vector<Shard>::iterator i=all.begin(); i!=all.end(); ++i ){
-                // this just makes sure there is an entry in the map for every shard
-                Shard s = *i;
-                shards[s.getName()].size();
-            }
-        }
-
-        pair<string,unsigned> min("",9999999);
-        pair<string,unsigned> max("",0);
-        
-        for ( map< string,vector<BSONObj> >::iterator i=shards.begin(); i!=shards.end(); ++i ){
-            string shard = i->first;
-            unsigned size = i->second.size();
-
-            if ( size < min.second ){
-                min.first = shard;
-                min.second = size;
-            }
-            
-            if ( size > max.second ){
-                max.first = shard;
-                max.second = size;
-            }
-        }
-        
-        log(4) << "min: " << min.first << "\t" << min.second << endl;
-        log(4) << "max: " << max.first << "\t" << max.second << endl;
-        
-        if( (int)( max.second - min.second) < ( _balancedLastTime ? 2 : 8 ) )
-            return;
-
-        string from = max.first;
-        string to = min.first;
-
-        BSONObj chunkToMove = pickChunk( shards[from] , shards[to] );
-        log() << "balancer: chose chunk from [" << from << "] to [" << to << "] " << chunkToMove << endl;        
-
-        ChunkInfoPtr p ( new ChunkInfo( ns, to, from, chunkToMove ));
-        toBalance->push_back( p );
-    }
-
-    BSONObj Balancer::pickChunk( vector<BSONObj>& from, vector<BSONObj>& to ){
-        assert( from.size() > to.size() );
-        
-        if ( to.size() == 0 )
-            return from[0];
-        
-        if ( from[0]["min"].Obj().woCompare( to[to.size()-1]["max"].Obj() , BSONObj() , false ) == 0 )
-            return from[0];
-
-        if ( from[from.size()-1]["max"].Obj().woCompare( to[0]["min"].Obj() , BSONObj() , false ) == 0 )
-            return from[from.size()-1];
-
-        return from[0];
     }    
-    // TODO: space-based policy ends here
 
-    void Balancer::_moveChunks( const vector<ChunkInfoPtr>* toBalance ) {
-        for ( vector<ChunkInfoPtr>::const_iterator it = toBalance->begin(); it != toBalance->end(); ++it ){
-            const ChunkInfo& chunkInfo = *it->get();
+    int Balancer::_moveChunks( const vector<CandidateChunkPtr>* candidateChunks ) {
+        int movedCount = 0;
+
+        for ( vector<CandidateChunkPtr>::const_iterator it = candidateChunks->begin(); it != candidateChunks->end(); ++it ){
+            const CandidateChunk& chunkInfo = *it->get();
 
             DBConfigPtr cfg = grid.getDBConfig( chunkInfo.ns );
             assert( cfg );
@@ -230,19 +117,22 @@ namespace mongo {
         
             string errmsg;
             if ( c->moveAndCommit( Shard::make( chunkInfo.to ) , errmsg ) ){
+                movedCount++;
                 continue;
             }
 
             log() << "balancer: MOVE FAILED **** " << errmsg << "\n"
                   << "  from: " << chunkInfo.from << " to: " << " chunk: " << chunkToMove << endl;
         }
+
+        return movedCount;
     }
     
-    void Balancer::ping(){
+    void Balancer::_ping(){
         assert( _myid.size() && _started );
         try {
             ScopedDbConnection conn( configServer.getPrimary() );
-            ping( conn.conn() );
+            _ping( conn.conn() );
             conn.done();
         }
         catch ( std::exception& e ){
@@ -251,7 +141,7 @@ namespace mongo {
         
     }
 
-    void Balancer::ping( DBClientBase& conn ){
+    void Balancer::_ping( DBClientBase& conn ){
         WriteConcern w = conn.getWriteConcern();
         conn.setWriteConcern( W_NONE );
 
@@ -263,7 +153,7 @@ namespace mongo {
         conn.setWriteConcern( w);
     }
     
-    bool Balancer::checkOIDs(){
+    bool Balancer::_checkOIDs(){
         vector<Shard> all;
         Shard::getAllShards( all );
         
@@ -291,6 +181,109 @@ namespace mongo {
         return true;
     }
 
+    void Balancer::_doBalanceRound( DBClientBase& conn, vector<CandidateChunkPtr>* candidateChunks ){
+        assert( candidateChunks );
+
+        //
+        // 1. Check whether there is any sharded collection to be balanced by querying
+        // the ShardsNS::database collection
+        //
+        // { "_id" : "test", "partitioned" : true, "primary" : "shard0",
+        //   "sharded" : {
+        //       "test.images" : { "key" : { "_id" : 1 }, "unique" : false },
+        //       ...  
+        //   }
+        // }
+        //
+
+        auto_ptr<DBClientCursor> cursor = conn.query( ShardNS::database , BSON( "partitioned" << true ) );
+        vector< string > collections;
+        while ( cursor->more() ){
+            BSONObj db = cursor->next();
+
+            // A database may be partitioned but not yet have a sharded collection. 
+            // 'cursor' will point to docs that do not contain the "sharded" key. Since 
+            // there'd be nothing to balance, we want to skip those here.
+
+            BSONElement shardedColls = db["sharded"];
+            if ( shardedColls.eoo() ){
+                log(2) << "balancer: skipping database with no sharded collection (" 
+                      << db["_id"].str() << ")" << endl;
+                continue;
+            }
+            
+            BSONObjIterator i( shardedColls.Obj() );
+            while ( i.more() ){
+                BSONElement e = i.next();
+                collections.push_back( e.fieldName() );
+            }
+        }
+        cursor.reset();
+
+        if ( collections.empty() ) {
+            log(1) << "balancer: no collections to balance" << endl;
+            return;
+        }
+
+        //
+        // 2. Get a list of all the shards that are participating in this balance round
+        // along with any maximum allowed quotas and current utilization. We get the
+        // latter by issuing db.serverStatus() (mem.mapped) to all shards.
+        //
+        // TODO: skip unresponsive shards and mark information as stale.
+        //
+ 
+        vector<Shard> allShards;
+        Shard::getAllShards( allShards );
+        if ( allShards.size() < 2) {
+            log(1) << "balancer: can't balance without more active shards" << endl;
+            return;
+        }
+
+        map< string, BSONObj > shardLimitsMap; 
+        for ( vector<Shard>::const_iterator it = allShards.begin(); it != allShards.end(); ++it ){
+            const Shard& s = *it;
+            ShardStatus status = s.getStatus();
+
+            BSONObj limitsObj = BSON( ShardFields::maxSize( s.getMaxSize() ) << 
+                                      ShardFields::currSize( status.mapped() ) <<
+                                      ShardFields::draining( s.isDraining()) );
+
+            shardLimitsMap[ s.getName() ] = limitsObj;
+        }
+
+        //
+        // 3. For each collection, check if the balancing policy recommends moving anything around.
+        //
+
+        for (vector<string>::const_iterator it = collections.begin(); it != collections.end(); ++it ) {
+            const string& ns = *it;
+
+            map< string,vector<BSONObj> > shardToChunksMap;
+            cursor = conn.query( ShardNS::chunk , QUERY( "ns" << ns ).sort( "min" ) );
+            while ( cursor->more() ){
+                BSONObj chunk = cursor->next();
+                vector<BSONObj>& chunks = shardToChunksMap[chunk["shard"].String()];
+                chunks.push_back( chunk.getOwned() );
+            }
+            cursor.reset();
+
+            if (shardToChunksMap.empty()) {
+                log(1) << "balancer: skipping empty collection (" << ns << ")";
+                continue;
+            }
+                
+            for ( vector<Shard>::iterator i=allShards.begin(); i!=allShards.end(); ++i ){
+                // this just makes sure there is an entry in shardToChunksMap for every shard
+                Shard s = *i;
+                shardToChunksMap[s.getName()].size();
+            }
+
+            CandidateChunk* p = _policy->balance( ns , shardLimitsMap , shardToChunksMap , _balancedLastTime );
+            if ( p ) candidateChunks->push_back( CandidateChunkPtr( p ) );
+        }
+    }
+
     void Balancer::run(){
 
         { // init stuff, don't want to do at static init
@@ -300,39 +293,45 @@ namespace mongo {
             log(1) << "balancer myid: " << _myid << endl;
             
             _started = time(0);
+
+            Shard::reloadShardInfo();
         }
         
-        ping();
-        checkOIDs();
+        _ping();
+        _checkOIDs();
 
         while ( ! inShutdown() ){
             sleepsecs( 10 );
             
             try {
                 ScopedDbConnection conn( configServer.getPrimary() );
-                ping( conn.conn() );
+                _ping( conn.conn() );
                 
-                if ( ! checkOIDs() ){
-                    uassert( 13258 , "oids broken after resetting!" , checkOIDs() );
+                if ( ! _checkOIDs() ){
+                    uassert( 13258 , "oids broken after resetting!" , _checkOIDs() );
                 }
                                     
-                vector<ChunkInfoPtr> toBalance;
-                if ( shouldIBalance( conn.conn() ) ){
-                    balance( conn.conn(), &toBalance );
-                    if ( toBalance.size() > 0 ) {
-                        _moveChunks( &toBalance );
+                vector<CandidateChunkPtr> candidateChunks;
+                if ( _shouldIBalance( conn.conn() ) ){
+                    log(1) << "balancer: start balancing round" << endl;        
+                    candidateChunks.clear();
+                    _doBalanceRound( conn.conn() , &candidateChunks );
+
+                    if ( candidateChunks.size() == 0 ) {
+                        log(1) << "balancer: no need to move any chunk" << endl;
+
+                    } else {
+                        _balancedLastTime = _moveChunks( &candidateChunks );
+                        log(1) << "balancer: end balancing round" << endl;        
                     }
                 }
-                
                 conn.done();
-                _balancedLastTime = toBalance.size();
             }
             catch ( std::exception& e ){
                 log() << "caught exception while doing balance: " << e.what() << endl;
                 continue;
             }
-            
         }
     }
 
-}
+}  // namespace mongo

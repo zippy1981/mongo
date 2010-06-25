@@ -240,11 +240,6 @@
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <ResourceCompile Include="..\db\db.rc">
-      <Filter>misc and third party</Filter>
-    </ResourceCompile>
-  </ItemGroup>
-  <ItemGroup>
     <Library Include="..\..\js\js64r.lib">
       <Filter>misc and third party</Filter>
     </Library>
@@ -636,6 +631,15 @@
     </ClCompile>
     <ClCompile Include="..\util\text.cpp">
       <Filter>util\cpp</Filter>
+    </ClCompile>
+    <ClCompile Include="..\client\gridfs.cpp">
+      <Filter>db\cpp</Filter>
+    </ClCompile>
+    <ClCompile Include="..\s\d_writeback.cpp">
+      <Filter>shard</Filter>
+    </ClCompile>
+    <ClCompile Include="..\s\d_state.cpp">
+      <Filter>shard</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

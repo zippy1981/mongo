@@ -172,7 +172,7 @@ namespace mongo {
         CurOp& op = *(c.curop());
         
         try {
-            runQuery(m, q, op, *resp);
+            dbresponse.exhaust = runQuery(m, q, op, *resp);
             assert( !resp->empty() );
         }
         catch ( AssertionException& e ) {
@@ -186,7 +186,7 @@ namespace mongo {
             }
 
             BSONObjBuilder err;
-            err.append("$err", e.msg.empty() ? "assertion during query" : e.msg);
+            e.getInfo().append( err );
             BSONObj errObj = err.done();
 
             BufBuilder b;
@@ -282,7 +282,7 @@ namespace mongo {
         bool log = logLevel >= 1;
         
         if ( op == dbQuery ) {
-            receivedQuery(c , dbresponse, m );
+            receivedQuery(c , dbresponse, m ); //zzz
         }
         else if ( op == dbGetMore ) {
             //DEV log = true;
@@ -349,7 +349,7 @@ namespace mongo {
         int ms = currentOp.totalTimeMillis();
         
         log = log || (logLevel >= 2 && ++ctr % 512 == 0);
-        //DEV log = true;
+        //DEV log = true; 
         if ( log || ms > logThreshold ) {
             if( logLevel < 3 && op == dbGetMore && strstr(ns, ".oplog.") && ms < 3000 && !log ) {
                 /* it's normal for getMore on the oplog to be slow because of use of awaitdata flag. */
@@ -453,7 +453,7 @@ namespace mongo {
         Client::Context ctx( ns );
 
         UpdateResult res = updateObjects(ns, toupdate, query, upsert, multi, true, op.debug() );
-        recordUpdate( res.existing , (int) res.num ); // for getlasterror
+        lastError.getSafe()->recordUpdate( res.existing , res.num , res.upserted ); // for getlasterror
     }
 
     void receivedDelete(Message& m, CurOp& op) {
@@ -475,7 +475,7 @@ namespace mongo {
         Client::Context ctx(ns);
 
         long long n = deleteObjects(ns, pattern, justOne, true);
-        recordDelete( (int) n );
+        lastError.getSafe()->recordDelete( n );
     }
     
     QueryResult* emptyMoreResult(long long);
@@ -490,24 +490,28 @@ namespace mongo {
         int ntoreturn = d.pullInt();
         long long cursorid = d.pullInt64();
         
-        ss << ns << " cid:" << cursorid << " ntoreturn:" << ntoreturn;;
+        ss << ns << " cid:" << cursorid;
+        if( ntoreturn ) 
+            ss << " ntoreturn:" << ntoreturn;
 
-        int pass = 0;
-        
+        int pass = 0;        
+        bool exhaust = false;
         QueryResult* msgdata;
         while( 1 ) {
             try {
                 mongolock lk(false);
                 Client::Context ctx(ns);
-                msgdata = processGetMore(ns, ntoreturn, cursorid, curop, pass );
+                msgdata = processGetMore(ns, ntoreturn, cursorid, curop, pass, exhaust);
             }
             catch ( GetMoreWaitException& ) { 
+                exhaust = false;
                 massert(13073, "shutting down", !inShutdown() );
                 pass++;
                 sleepmillis(2);
                 continue;
             }
             catch ( AssertionException& e ) {
+                exhaust = false;
                 ss << " exception " << e.toString();
                 msgdata = emptyMoreResult(cursorid);
                 ok = false;
@@ -521,7 +525,8 @@ namespace mongo {
         ss << " nreturned:" << msgdata->nReturned;
         dbresponse.response = resp;
         dbresponse.responseTo = m.header()->id;
-
+        if( exhaust ) { ss << " exhaust "; 
+        dbresponse.exhaust = ns;}
         return ok;
     }
 
@@ -558,8 +563,8 @@ namespace mongo {
         Message & container;
     };
     
-    void getDatabaseNames( vector< string > &names ) {
-        boost::filesystem::path path( dbpath );
+    void getDatabaseNames( vector< string > &names , const string& usePath ) {
+        boost::filesystem::path path( usePath );
         for ( boost::filesystem::directory_iterator i( path );
                 i != boost::filesystem::directory_iterator(); ++i ) {
             if ( directoryperdb ) {

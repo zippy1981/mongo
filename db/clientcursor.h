@@ -61,6 +61,7 @@ namespace mongo {
         unsigned _pinValue;
 
         bool _doingDeletes;
+        ElapsedTracker _yieldSometimesTracker;
 
         static CCById clientCursorsById;
         static CCByLoc byLoc;
@@ -68,6 +69,8 @@ namespace mongo {
         
         static CursorId allocCursorId_inlock();
 
+
+        
     public:
         /* use this to assure we don't in the background time out cursor while it is under use.
            if you are using noTimeout() already, there is no risk anyway.
@@ -104,14 +107,14 @@ namespace mongo {
         /*const*/ CursorId cursorid;
         string ns;
         shared_ptr<Cursor> c;
-        int pos;                                 // # objects into the cursor so far 
+        int pos;                  // # objects into the cursor so far 
         BSONObj query;
-        int _queryOptions;
+        int _queryOptions;        // see enum QueryOptions dbclient.h
         OpTime _slaveReadTill;
 
         ClientCursor(int queryOptions, shared_ptr<Cursor>& _c, const char *_ns) :
             _idleAgeMillis(0), _pinValue(0), 
-            _doingDeletes(false), 
+            _doingDeletes(false), _yieldSometimesTracker(128,10),
             ns(_ns), c(_c), 
             pos(0), _queryOptions(queryOptions)
         {
@@ -137,6 +140,8 @@ namespace mongo {
         static void invalidate(const char *nsPrefix);
 
         /**
+         * @param microsToSleep -1 : ask client 
+         *                     >=0 : sleep for that amount
          * do a dbtemprelease 
          * note: caller should check matcher.docMatcher().atomic() first and not yield if atomic - 
          *       we don't do herein as this->matcher (above) is only initialized for true queries/getmore.
@@ -145,7 +150,12 @@ namespace mongo {
          *         if false is returned, then this ClientCursor should be considered deleted - 
          *         in fact, the whole database could be gone.
          */
-        bool yield();
+        bool yield( int microsToSleep = -1 );
+
+        /**
+         * @return same as yield()
+         */
+        bool yieldSometimes();
 
         struct YieldLock : boost::noncopyable {
             explicit YieldLock( ptr<ClientCursor> cc )
@@ -177,7 +187,7 @@ namespace mongo {
             ClientCursor * _cc;
             CursorId _id;
             bool _doingDeletes;
-
+            
             scoped_ptr<dbtempreleasecond> _unlock;
 
         };

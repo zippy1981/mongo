@@ -17,7 +17,6 @@
 
 #include "pch.h"
 #include "engine_spidermonkey.h"
-
 #include "../client/dbclient.h"
 
 #ifndef _WIN32
@@ -533,6 +532,24 @@ namespace mongo {
             return OBJECT_TO_JSVAL( o );
         }
 
+        void makeLongObj( long long n, JSObject * o ) {
+            boost::uint64_t val = (boost::uint64_t)n;
+            CHECKNEWOBJECT(o,_context,"NumberLong1");
+            setProperty( o , "floatApprox" , toval( (double)(boost::int64_t)( val ) ) );                    
+            if ( (boost::int64_t)val != (boost::int64_t)(double)(boost::int64_t)( val ) ) {
+                // using 2 doubles here instead of a single double because certain double
+                // bit patterns represent undefined values and sm might trash them
+                setProperty( o , "top" , toval( (double)(boost::uint32_t)( val >> 32 ) ) );
+                setProperty( o , "bottom" , toval( (double)(boost::uint32_t)( val & 0x00000000ffffffff ) ) );
+            }
+        }
+        
+        jsval toval( long long n ) {
+            JSObject * o = JS_NewObject( _context , &numberlong_class , 0 , 0 );
+            makeLongObj( n, o );
+            return OBJECT_TO_JSVAL( o );
+        }
+        
         jsval toval( const BSONElement& e ){
 
             switch( e.type() ){
@@ -603,7 +620,9 @@ namespace mongo {
             }
             case Code:{
                 JSFunction * func = compileFunction( e.valuestr() );
-                return OBJECT_TO_JSVAL( JS_GetFunctionObject( func ) );
+                if ( func )
+                    return OBJECT_TO_JSVAL( JS_GetFunctionObject( func ) );
+                return JSVAL_NULL;
             }
             case CodeWScope:{
                 JSFunction * func = compileFunction( e.codeWScopeCode() );
@@ -632,17 +651,7 @@ namespace mongo {
                 return OBJECT_TO_JSVAL( o );
             }
             case NumberLong: {
-                boost::uint64_t val = (boost::uint64_t)e.numberLong();
-                JSObject * o = JS_NewObject( _context , &numberlong_class , 0 , 0 );
-                CHECKNEWOBJECT(o,_context,"NumberLong1");
-                setProperty( o , "floatApprox" , toval( (double)(boost::int64_t)( val ) ) );                    
-                if ( (boost::int64_t)val != (boost::int64_t)(double)(boost::int64_t)( val ) ) {
-                    // using 2 doubles here instead of a single double because certain double
-                    // bit patterns represent undefined values and sm might trash them
-                    setProperty( o , "top" , toval( (double)(boost::uint32_t)( val >> 32 ) ) );
-                    setProperty( o , "bottom" , toval( (double)(boost::uint32_t)( val & 0x00000000ffffffff ) ) );
-                }
-                return OBJECT_TO_JSVAL( o );                
+                return toval( e.numberLong() );
             }
             case DBRef: {
                 JSObject * o = JS_NewObject( _context , &dbpointer_class , 0 , 0 );
@@ -663,8 +672,8 @@ namespace mongo {
                 const char * data = e.binData( len );
                 assert( JS_SetPrivate( _context , o , new BinDataHolder( data ) ) );
 
-                setProperty( o , "len" , toval( len ) );
-                setProperty( o , "type" , toval( (int)e.binDataType() ) );
+                setProperty( o , "len" , toval( (double)len ) );
+                setProperty( o , "type" , toval( (double)e.binDataType() ) );
                 return OBJECT_TO_JSVAL( o );
             }
             }
@@ -1371,6 +1380,15 @@ namespace mongo {
             JSBool worked = JS_EvaluateScript( _context , _global , code.c_str() , strlen( code.c_str() ) , name.c_str() , 0 , &ret );
             uninstallCheckTimeout( timeoutMs );
 
+            if ( ! worked && _error.size() == 0 ){
+                jsval v;
+                if ( JS_GetPendingException( _context , &v ) ){
+                    _error = _convertor->toString( v );
+                    if ( reportError )
+                        cout << _error << endl;
+                }
+            }
+
             if ( assertOnError )
                 uassert( 10228 ,  name + " exec failed" , worked );
 
@@ -1449,7 +1467,6 @@ namespace mongo {
             code << field << "_" << " = { x : " << field << "_ }; ";
             code << field << " = function(){ return nativeHelper.apply( " << field << "_ , arguments ); }";
             exec( code.str().c_str() );
-
         }
 
         virtual void gc(){
@@ -1486,9 +1503,14 @@ namespace mongo {
         
     };
 
+    /* used to make the logging not overly chatty in the mongo shell. */
+    extern bool isShell;
+
     void errorReporter( JSContext *cx, const char *message, JSErrorReport *report ){
         stringstream ss;
-        ss << "JS Error: " << message;
+        if( !isShell ) 
+            ss << "JS Error: ";
+        ss << message;
 
         if ( report && report->filename ){
             ss << " " << report->filename << ":" << report->lineno;
@@ -1508,10 +1530,10 @@ namespace mongo {
 
         for ( uintN i=0; i<argc; i++ ){
             string filename = c.toString( argv[i] );
-            cout << "should load [" << filename << "]" << endl;
+            //cout << "load [" << filename << "]" << endl;
 
             if ( ! s->execFile( filename , false , true , false ) ){
-                JS_ReportError( cx , ((string)"error loading file: " + filename ).c_str() );
+                JS_ReportError( cx , ((string)"error loading js file: " + filename ).c_str() );
                 return JS_FALSE;
             }
         }

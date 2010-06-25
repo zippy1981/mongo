@@ -30,6 +30,19 @@ namespace mongo {
     LastErrorHolder lastError;
     mongo::mutex LastErrorHolder::_idsmutex("LastErrorHolder");
 
+    bool isShell = false;
+    void raiseError(int code , const char *msg) {
+        LastError *le = lastError.get();
+        if ( le == 0 ) {
+            /* might be intentional (non-user thread) */            
+            DEV if( !isShell ) log() << "warning dev: lastError==0 won't report:" << msg << endl;
+        } else if ( le->disabled ) {
+            log() << "lastError disabled, can't report: " << msg << endl;
+        } else {
+            le->raiseError(code, msg);
+        }
+    }
+    
     void LastError::appendSelf( BSONObjBuilder &b ) {
         if ( !valid ) {
             b.appendNull( "err" );
@@ -44,6 +57,8 @@ namespace mongo {
             b.append( "code" , code );
         if ( updatedExisting != NotUpdate )
             b.appendBool( "updatedExisting", updatedExisting == True );
+        if ( upsertedId.isSet() )
+            b.append( "upserted" , upsertedId );
         b.appendNumber( "n", nObjects );
     }
 

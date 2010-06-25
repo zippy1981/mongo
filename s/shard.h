@@ -29,10 +29,11 @@ namespace mongo {
     class Shard {
     public:
         Shard()
-            : _name(""), _addr(""), _maxSize(0){
+            : _name("") , _addr("") , _maxSize(0) , _isDraining( false ){
         }
-        Shard( const string& name , const string& addr, unsigned long maxSize = 0)
-            : _name(name), _addr( addr ), _maxSize( maxSize ){
+
+        Shard( const string& name , const string& addr, long long maxSize = 0 , bool isDraining = false )
+            : _name(name) , _addr( addr ) , _maxSize( maxSize ) , _isDraining( isDraining ){
         }
 
         Shard( const string& ident ){
@@ -40,11 +41,11 @@ namespace mongo {
         }
 
         Shard( const Shard& other )
-            : _name( other._name ) , _addr( other._addr ), _maxSize( other._maxSize ){
+            : _name( other._name ) , _addr( other._addr ) , _maxSize( other._maxSize ) , _isDraining( other._isDraining ){
         }
 
         Shard( const Shard* other )
-            : _name( other->_name ) ,_addr( other->_addr ), _maxSize( other->_maxSize ){
+            : _name( other->_name ) , _addr( other->_addr ), _maxSize( other->_maxSize ) , _isDraining( other->_isDraining ){
         }
         
         static Shard make( const string& ident ){
@@ -70,8 +71,12 @@ namespace mongo {
             return _addr;
         }
 
-        unsigned long getMaxSize() const {
+        long long getMaxSize() const {
             return _maxSize;
+        }
+
+        bool isDraining() const {
+            return _isDraining;
         }
 
         string toString() const {
@@ -132,9 +137,10 @@ namespace mongo {
         static Shard EMPTY;
 
     private:
-        string        _name;
-        string        _addr;
-        unsigned long _maxSize;  // in MBytes, 0 is unlimited 
+        string    _name;
+        string    _addr;
+        long long _maxSize;    // in MBytes, 0 is unlimited 
+        bool      _isDraining; // shard is currently being removed
     };
 
     class ShardStatus {
@@ -159,6 +165,10 @@ namespace mongo {
         
         Shard shard() const {
             return _shard;
+        }
+
+        long long mapped() const {
+            return _mapped;
         }
 
     private:

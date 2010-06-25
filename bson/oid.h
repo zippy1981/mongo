@@ -99,6 +99,7 @@ namespace mongo {
         time_t asTimeT();
         Date_t asDateT() { return asTimeT() * (long long)1000; }
         
+        bool isSet() const { return a || b; }
     };
 #pragma pack()
 
@@ -117,9 +118,6 @@ namespace mongo {
         /** Javascript JSON compatible */
         JS
     };
-
-    /* l and r MUST have same type when called: check that first. */
-    int compareElementValues(const BSONElement& l, const BSONElement& r);
 
     inline ostream& operator<<( ostream &s, const OID &o ) {
         s << o.str();

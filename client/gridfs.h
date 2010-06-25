@@ -34,19 +34,19 @@ namespace mongo {
 
         int len(){
             int len;
-            const char * data = _data["data"].binData( len );
+            const char * data = _data["data"].binDataClean( len );
             int * foo = (int*)data;
-            assert( len - 4 == foo[0] );
-            return len - 4;
+            assert( len == foo[0] );
+            return len;
         }
 
         const char * data( int & len ){
-            const char * data = _data["data"].binData( len );
+            const char * data = _data["data"].binDataClean( len );
             int * foo = (int*)data;
-            assert( len - 4 == foo[0] );
+            assert( len == foo[0] );
 
-            len = len - 4;
-            return data + 4;
+            len = len;
+            return data;
         }
 
     private:
@@ -67,6 +67,11 @@ namespace mongo {
          */
         GridFS( DBClientBase& client , const string& dbName , const string& prefix="fs" );
         ~GridFS();
+
+        /**
+         * @param
+         */
+        void setChunkSize(unsigned int size);
 
         /**
          * puts the file reference by fileName into the db
@@ -123,6 +128,7 @@ namespace mongo {
         string _prefix;
         string _filesNS;
         string _chunksNS;
+        unsigned int _chunkSize;
 
         // insert fileobject. All chunks must be in DB.
         BSONObj insertFile(const string& name, const OID& id, unsigned length, const string& contentType);

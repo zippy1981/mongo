@@ -62,6 +62,8 @@ namespace mongo {
 
 #if defined(_WIN32)
     std::wstring windowsServiceName = L"MongoDB";
+    std::wstring windowsServiceUser = L"";
+    std::wstring windowsServicePassword = L"";
 #endif
 
     void setupSignals();
@@ -129,13 +131,58 @@ namespace mongo {
 
     void webServerThread();
 
+/* todo: make this a real test.  the stuff in dbtests/ seem to do all dbdirectclient which exhaust doesn't support yet. */
+// QueryOption_Exhaust
+#define TESTEXHAUST 0
+#if( TESTEXHAUST )
+    void testExhaust() { 
+        sleepsecs(1);
+        unsigned n = 0;
+        auto f = [&n](const BSONObj& o) { 
+            assert( o.valid() );
+            //cout << o << endl;
+            n++;
+            bool testClosingSocketOnError = false;
+            if( testClosingSocketOnError )
+                assert(false);
+        };
+        DBClientConnection db(false);
+        db.connect("localhost");
+        const char *ns = "local.foo";
+        if( db.count(ns) < 10000 )
+            for( int i = 0; i < 20000; i++ ) 
+                db.insert(ns, BSON("aaa" << 3 << "b" << "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
+
+        try {
+            db.query(f, ns, Query() );
+        }
+        catch(...) { 
+            cout << "hmmm" << endl;
+        }
+
+        try {
+            db.query(f, ns, Query() );
+        }
+        catch(...) { 
+            cout << "caught" << endl;
+        }
+
+        cout << n << endl;
+    };
+#endif
+
     void listen(int port) {
         //testTheDb();
         log() << "waiting for connections on port " << port << endl;
         OurListener l(bind_ip, port);
+        l.setAsTimeTracker();
         startReplication();
         if ( !noHttpInterface )
             boost::thread thr(webServerThread);
+
+#if(TESTEXHAUST)
+        boost::thread thr(testExhaust);
+#endif
         l.initAndListen();
     }
 
@@ -150,6 +197,11 @@ namespace mongo {
 #if defined(_SC_AVPHYS_PAGES)
         out() << "  _SC_AVPHYS_PAGES: " << sysconf(_SC_AVPHYS_PAGES) << endl;
 #endif
+    }
+
+    /* if server is really busy, wait a bit */
+    void beNice() {
+        sleepmicros( Client::recommendedYieldMicros() );
     }
 
     /* we create one thread for each connection from an app server database.
@@ -183,7 +235,7 @@ namespace mongo {
                     dbMsgPort->shutdown();
                     break;
                 }
-
+sendmore:
                 if ( inShutdown() ) {
                     log() << "got request after shutdown()" << endl;
                     break;
@@ -193,7 +245,7 @@ namespace mongo {
 
                 DbResponse dbresponse;
                 if ( !assembleResponse( m, dbresponse, dbMsgPort->farEnd ) ) {
-                    out() << curTimeMillis() % 10000 << "   end msg " << dbMsgPort->farEnd.toString() << endl;
+                    log() << curTimeMillis() % 10000 << "   end msg " << dbMsgPort->farEnd.toString() << endl;
                     /* todo: we may not wish to allow this, even on localhost: very low priv accounts could stop us. */
                     if ( dbMsgPort->farEnd.isLocalHost() ) {
                         dbMsgPort->shutdown();
@@ -202,17 +254,43 @@ namespace mongo {
                         dbexit(EXIT_CLEAN);
                     }
                     else {
-                        out() << "  (not from localhost, ignoring end msg)" << endl;
+                        log() << "  (not from localhost, ignoring end msg)" << endl;
                     }
                 }
 
-                if ( dbresponse.response )
+                if ( dbresponse.response ) {
                     dbMsgPort->reply(m, *dbresponse.response, dbresponse.responseTo);
+                    if( dbresponse.exhaust ) { 
+                        MsgData *header = dbresponse.response->header();
+                        QueryResult *qr = (QueryResult *) header;
+                        long long cursorid = qr->cursorId;
+                        if( cursorid ) {
+                            string ns = dbresponse.exhaust; // before reset() free's it...
+                            m.reset();
+                            BufBuilder b(512);
+                            b.append((int) 0 /*size set later in appendData()*/);
+                            b.append(header->id);
+                            b.append(header->responseTo);
+                            b.append((int) dbGetMore);
+                            b.append((int) 0);
+                            assert( dbresponse.exhaust && *dbresponse.exhaust != 0 );
+                            b.append(ns);
+                            b.append((int) 0); // ntoreturn
+                            b.append(cursorid);
+                            m.appendData(b.buf(), b.len());
+                            b.decouple();
+                            DEV log() << "exhaust=true sending more" << endl;
+                            beNice();
+                            goto sendmore;
+                        }
+                    }
+                }
             }
 
         }
-        catch ( AssertionException& ) {
-            problem() << "AssertionException in connThread, closing client connection" << endl;
+        catch ( AssertionException& e ) {
+            log() << "AssertionException in connThread, closing client connection" << endl;
+            log() << ' ' << e.what() << endl;
             dbMsgPort->shutdown();
         }
         catch ( SocketException& ) {
@@ -624,10 +702,13 @@ int main(int argc, char* argv[], char *envp[] )
         ;
 	#if defined(_WIN32)
     windows_scm_options.add_options()
-		("install", "install mongodb service")
+        ("install", "install mongodb service")
         ("remove", "remove mongodb service")
+        ("reinstall", "reinstall mongodb service (equivilant of mongod --remove followed by mongod --install)")
         ("service", "start mongodb service")
         ("serviceName", po::value<string>(), "windows service name")
+        ("serviceUser", po::value<string>(), "user name service executes as")
+        ("servicePassword", po::value<string>(), "password used to authenticate serviceUser")
 		;
 	#endif
 
@@ -690,6 +771,7 @@ int main(int argc, char* argv[], char *envp[] )
     {
         bool installService = false;
         bool removeService = false;
+        bool reinstallService = false;
         bool startService = false;
         po::variables_map params;
         
@@ -794,6 +876,9 @@ int main(int argc, char* argv[], char *envp[] )
         if (params.count("remove")) {
             removeService = true;
         }
+        if (params.count("reinstall")) {
+            reinstallService = true;
+        }
         if (params.count("service")) {
             startService = true;
         }
@@ -888,8 +973,23 @@ int main(int argc, char* argv[], char *envp[] )
         if (params.count("serviceName")){
             string x = params["serviceName"].as<string>();
             windowsServiceName = wstring(x.size(),L' ');
-            for ( size_t i=0; i<x.size(); i++)
+            for ( size_t i=0; i<x.size(); i++) {
                 windowsServiceName[i] = x[i];
+	    }
+        }
+        if (params.count("serviceUser")){
+            string x = params["serviceUser"].as<string>();
+            windowsServiceUser = wstring(x.size(),L' ');
+            for ( size_t i=0; i<x.size(); i++) {
+                windowsServiceUser[i] = x[i];
+	    }
+        }
+        if (params.count("servicePassword")){
+            string x = params["servicePassword"].as<string>();
+            windowsServicePassword = wstring(x.size(),L' ');
+            for ( size_t i=0; i<x.size(); i++) {
+                windowsServicePassword[i] = x[i];
+	    }
         }
         #endif
 
@@ -936,8 +1036,11 @@ int main(int argc, char* argv[], char *envp[] )
         }
 
 #if defined(_WIN32)
-        if ( installService ) {
-            if ( !ServiceController::installService( windowsServiceName , L"Mongo DB", L"Mongo DB Server", argc, argv ) )
+        if ( reinstallService ) {
+            ServiceController::removeService( windowsServiceName );
+	}
+	if ( installService || reinstallService ) {
+            if ( !ServiceController::installService( windowsServiceName , L"Mongo DB", L"Mongo DB Server", windowsServiceUser, windowsServicePassword, argc, argv ) )
                 dbexit( EXIT_NTSERVICE_ERROR );
             dbexit( EXIT_CLEAN );
         }

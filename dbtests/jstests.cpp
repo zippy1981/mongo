@@ -541,7 +541,7 @@ namespace JSTests {
             ASSERT( s->exec( "c = {c:a.a.toString()}", "foo", false, true, false ) );
             out = s->getObject( "c" );
             stringstream ss;
-            ss << val;
+            ss << "NumberLong( \"" << val << "\" )";
             ASSERT_EQUALS( ss.str(), out.firstElement().valuestr() );
 
             ASSERT( s->exec( "d = {d:a.a.toNumber()}", "foo", false, true, false ) );
@@ -808,7 +808,7 @@ namespace JSTests {
             {
                 BSONObjBuilder b;
                 b.append( "a" , 7 );
-                b.appendBinData( "b" , 12 , ByteArray , foo );
+                b.appendBinData( "b" , 12 , BinDataGeneral , foo );
                 in = b.obj();
                 s->setObject( "x" , in );
             }
@@ -825,11 +825,11 @@ namespace JSTests {
             // check that BinData js class is utilized
             s->invokeSafe( "q = x.b.toString();", BSONObj() );
             stringstream expected;
-            expected << "BinData( type: " << ByteArray << ", base64: \"" << base64 << "\" )";
+            expected << "BinData( type: " << BinDataGeneral << ", base64: \"" << base64 << "\" )";
             ASSERT_EQUALS( expected.str(), s->getString( "q" ) );
             
             stringstream scriptBuilder;
-            scriptBuilder << "z = { c : new BinData( " << ByteArray << ", \"" << base64 << "\" ) };";
+            scriptBuilder << "z = { c : new BinData( " << BinDataGeneral << ", \"" << base64 << "\" ) };";
             string script = scriptBuilder.str();
             s->invokeSafe( script.c_str(), BSONObj() );
             out = s->getObject( "z" );
@@ -879,7 +879,34 @@ namespace JSTests {
                 s->invoke( f , empty );
                 ASSERT_EQUALS( 11 , s->getNumber( "return" ) );
             }
-            cout << "speed1: " << ( n / t.millis() ) << " ops/ms" << endl;
+            //cout << "speed1: " << ( n / t.millis() ) << " ops/ms" << endl;
+        }
+    };
+
+    class ScopeOut {
+    public:
+        void run(){
+            auto_ptr<Scope> s;
+            s.reset( globalScriptEngine->newScope() );
+            
+            s->invokeSafe( "x = 5;" , BSONObj() );
+            {
+                BSONObjBuilder b;
+                s->append( b , "z" , "x" );
+                ASSERT_EQUALS( BSON( "z" << 5 ) , b.obj() );
+            }
+
+            s->invokeSafe( "x = function(){ return 17; }" , BSONObj() );
+            BSONObj temp;
+            {
+                BSONObjBuilder b;
+                s->append( b , "z" , "x" );
+                temp = b.obj();
+                s->setThis( &temp );
+            }
+
+            s->invokeSafe( "foo = this.z();" , BSONObj() );
+            ASSERT_EQUALS( 17 , s->getNumber( "foo" ) );
         }
     };
 
@@ -918,6 +945,8 @@ namespace JSTests {
             add< InvalidUTF8Check >();
             add< Utf8Check >();
             add< LongUtf8String >();
+
+            add< ScopeOut >();
         }
     } myall;
     

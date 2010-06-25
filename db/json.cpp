@@ -42,7 +42,18 @@ using namespace boost::spirit;
 
 namespace mongo {
 
-    struct ObjectBuilder {
+    struct ObjectBuilder : boost::noncopyable {
+        ~ObjectBuilder(){
+            unsigned i = builders.size();
+            if ( i ){
+                i--;
+                for ( ; i>=1; i-- ){
+                    if ( builders[i] ){
+                        builders[i]->done();
+                    }
+                }
+            }
+        }
         BSONObjBuilder *back() {
             return builders.back().get();
         }
@@ -546,21 +557,24 @@ public:
         ObjectBuilder &b;
     };
 
-    BSONObj fromjson( const char *str ) {
-        if ( ! strlen(str) )
+    BSONObj fromjson( const char *str , int* len) {
+        if ( str[0] == '\0' ){
+            if (len) *len = 0;
             return BSONObj();
+        }
+
         ObjectBuilder b;
         JsonGrammar parser( b );
         parse_info<> result = parse( str, parser, space_p );
-        if ( !result.full ) {
-            int len = strlen( result.stop );
-            if ( len > 10 )
-                len = 10;
-            stringstream ss;
-            ss << "Failure parsing JSON string near: " << string( result.stop, len );
-            massert( 10340 ,  ss.str(), false );
+        if (len) {
+            *len = result.stop - str;
+        } else if ( !result.full ) {
+            int limit = strnlen(result.stop , 10);
+            msgasserted(10340, "Failure parsing JSON string near: " + string( result.stop, limit ));
         }
-        return b.pop();
+        BSONObj ret = b.pop();
+        assert( b.empty() );
+        return ret;
     }
 
     BSONObj fromjson( const string &str ) {

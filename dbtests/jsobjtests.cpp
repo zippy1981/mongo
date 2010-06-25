@@ -266,7 +266,7 @@ namespace JsobjTests {
                     
                     bb << "b" << 2;
                     BSONObj obj = bb.obj();
-                    ASSERT(obj.objsize() == 4+(1+2+4)+(1+2+4)+1);
+                    ASSERT_EQUALS(obj.objsize() , 4+(1+2+4)+(1+2+4)+1);
                     ASSERT(obj.valid());
                     ASSERT(obj.hasField("a"));
                     ASSERT(obj.hasField("b"));
@@ -639,7 +639,7 @@ namespace JsobjTests {
                                          "\"seven\": [ \"a\", \"bb\", \"ccc\", 5 ],"
                                          "\"eight\": Dbref( \"rrr\", \"01234567890123456789aaaa\" ),"
                                          "\"_id\": ObjectId( \"deadbeefdeadbeefdeadbeef\" ),"
-                                         "\"nine\": { \"$binary\": \"abc=\", \"$type\": \"02\" },"
+                                         "\"nine\": { \"$binary\": \"abc=\", \"$type\": \"00\" },"
                                          "\"ten\": Date( 44 ), \"eleven\": /foooooo/i }" );
                     fuzz( b );
                     b.valid();
@@ -1512,6 +1512,33 @@ namespace JsobjTests {
         }
     };
 
+    class BSONFieldTests {
+    public:
+        void run(){
+            {
+                BSONField<int> x("x");
+                BSONObj o = BSON( x << 5 );
+                ASSERT_EQUALS( BSON( "x" << 5 ) , o );
+            }
+
+            {
+                BSONField<int> x("x");
+                BSONObj o = BSON( x.make(5) );
+                ASSERT_EQUALS( BSON( "x" << 5 ) , o );
+            }
+
+            {
+                BSONField<int> x("x");
+                BSONObj o = BSON( x(5) );
+                ASSERT_EQUALS( BSON( "x" << 5 ) , o );
+
+                o = BSON( x.gt(5) );
+                ASSERT_EQUALS( BSON( "x" << BSON( "$gt" << 5 ) ) , o );
+            }
+
+        }
+    };
+
     class All : public Suite {
     public:
         All() : Suite( "jsobj" ){
@@ -1607,6 +1634,7 @@ namespace JsobjTests {
             add< ElementSetTest >();
             add< EmbeddedNumbers >();
             add< BuilderPartialItearte >();
+            add< BSONFieldTests >();
         }
     } myall;
     

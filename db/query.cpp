@@ -34,6 +34,7 @@
 #include "commands.h"
 #include "queryoptimizer.h"
 #include "lasterror.h"
+#include "../s/d_logic.h"
 
 namespace mongo {
 
@@ -139,14 +140,12 @@ namespace mongo {
             
         CursorId id = cc->cursorid;
             
-        unsigned long long nScanned = 0;
         bool justOne = justOneOrig;
+        bool canYield = !god && !creal->matcher()->docMatcher().atomic();
         do {
-            if ( ++nScanned % 128 == 0 && !god && !creal->matcher()->docMatcher().atomic() ) {
-                if ( ! cc->yield() ){
-                    cc.release(); // has already been deleted elsewhere
-                    break;
-                }
+            if ( canYield && ! cc->yieldSometimes() ){
+                cc.release(); // has already been deleted elsewhere
+                break;
             }
                 
             // this way we can avoid calling updateLocation() every time (expensive)
@@ -212,8 +211,7 @@ namespace mongo {
             return _runCommands(ns, jsobj, b, anObjBuilder, fromRepl, queryOptions);
         }
         catch ( AssertionException& e ) {
-            if ( !e.msg.empty() )
-                anObjBuilder.append("assertion", e.msg);
+            e.getInfo().append( anObjBuilder , "assertion" , "assertionCode" );
         }
         curop.debug().str << " assertion ";
         anObjBuilder.append("errmsg", "db assertion failure");
@@ -256,8 +254,8 @@ namespace mongo {
         return qr;
     }
 
-    QueryResult* processGetMore(const char *ns, int ntoreturn, long long cursorid , CurOp& curop, int pass ) {
-
+    QueryResult* processGetMore(const char *ns, int ntoreturn, long long cursorid , CurOp& curop, int pass, bool& exhaust ) {
+        exhaust = false;
         ClientCursor::Pointer p(cursorid);
         ClientCursor *cc = p._c;
         
@@ -322,8 +320,13 @@ namespace mongo {
                 // in some cases (clone collection) there won't be a matcher
                 if ( c->matcher() && !c->matcher()->matches(c->currKey(), c->currLoc() ) ) {
                 }
+                /*
+                  TODO
+                else if ( _chunkMatcher && ! _chunkMatcher->belongsToMe( c->currKey(), c->currLoc() ) ){
+                    cout << "TEMP skipping un-owned chunk: " << c->current() << endl;
+                }
+                */
                 else {
-                    //out() << "matches " << c->currLoc().toString() << '\n';
                     if( c->getsetdup(c->currLoc()) ) {
                         //out() << "  but it's a dup \n";
                     }
@@ -349,6 +352,7 @@ namespace mongo {
                 cc->updateLocation();
                 cc->mayUpgradeStorage();
                 cc->storeOpForSlave( last );
+                exhaust = cc->_queryOptions & QueryOption_Exhaust;
             }
         }
 
@@ -477,7 +481,7 @@ namespace mongo {
         shared_ptr< CountOp > res = mps.runOp( original );
         if ( !res->complete() ) {
             log() << "Count with ns: " << ns << " and query: " << query
-                  << " failed with exception: " << res->exceptionMessage()
+                  << " failed with exception: " << res->exception()
                   << endl;
             return 0;
         }
@@ -507,14 +511,18 @@ namespace mongo {
             } else {
                 _b.reset( new BSONObjBuilder( _c->subobjStart() ) );
             }
-            *_b << "cursor" << c->toString() << "indexBounds" << c->prettyIndexBounds();
+            *_b << "cursor" << c->toString();
             _b->appendNumber( "nscanned", nscanned );
             _b->appendNumber( "nscannedObjects", nscannedObjects );
             *_b << "n" << n;
-            if ( scanAndOrder ) {
+
+            if ( scanAndOrder )
                 *_b << "scanAndOrder" << true;
-            }
+
             *_b << "millis" << millis;
+
+            *_b << "indexBounds" << c->prettyIndexBounds();
+
             if ( !hint ) {
                 *_b << "allPlans" << _a->arr();
             }
@@ -551,16 +559,17 @@ namespace mongo {
     public:
         
         UserQueryOp( const ParsedQuery& pq, Message &response, ExplainBuilder &eb, CurOp &curop ) :
-        //int ntoskip, int ntoreturn, const BSONObj &order, bool wantMore,
-        //                   bool explain, FieldMatcher *filter, int queryOptions ) :
             _buf( 32768 ) , // TODO be smarter here
             _pq( pq ) ,
             _ntoskip( pq.getSkip() ) ,
             _nscanned(0), _oldNscanned(0), _nscannedObjects(0), _oldNscannedObjects(0),
             _n(0),
             _oldN(0),
+            _chunkMatcher(shardingState.getChunkMatcher(pq.ns())),
             _inMemSort(false),
+            _yieldTracker(256,20),
             _saveClientCursor(false),
+            _wouldSaveClientCursor(false),
             _oplogReplay( pq.hasOption( QueryOption_OplogReplay) ),
             _response( response ),
             _eb( eb ),
@@ -604,7 +613,19 @@ namespace mongo {
                 finish( false );
                 return;
             }
-            
+
+            if ( _cc || _yieldTracker.ping() ){
+                if ( ! _cc )
+                    _cc.reset( new ClientCursor( _pq.getOptions() | QueryOption_NoCursorTimeout , _c , _pq.ns() ) );
+                
+                if ( ! _cc->yieldSometimes() ){
+                    _c.reset();
+                    _cc.reset();
+                    finish(false);
+                    return;
+                }
+            }
+
             bool mayCreateCursor1 = _pq.wantMore() && ! _inMemSort && _pq.getNumToReturn() != 1 && useCursors;
             
             if( 0 ) { 
@@ -625,7 +646,13 @@ namespace mongo {
             else {
                 _nscannedObjects++;
                 DiskLoc cl = _c->currLoc();
-                if( !_c->getsetdup(cl) ) { 
+                if ( _chunkMatcher && ! _chunkMatcher->belongsToMe( _c->currKey(), _c->currLoc() ) ){
+                    // cout << "TEMP skipping un-owned chunk: " << _c->current() << endl;
+                }
+                else if( _c->getsetdup(cl) ) { 
+                    // dup
+                }
+                else {
                     // got a match.
                     
                     if ( _inMemSort ) {
@@ -665,8 +692,8 @@ namespace mongo {
                             else if ( _pq.enoughForFirstBatch( n() , _buf.len() ) ){
                                 /* if only 1 requested, no cursor saved for efficiency...we assume it is findOne() */
                                 if ( mayCreateCursor1 ) {
-                                    _c->advance();
-                                    if ( _c->ok() ) {
+                                    _wouldSaveClientCursor = true;
+                                    if ( _c->advance() ) {
                                         // more...so save a cursor
                                         _saveClientCursor = true;
                                     }
@@ -739,7 +766,8 @@ namespace mongo {
         long long nscanned() const { return _nscanned + _oldNscanned; }
         long long nscannedObjects() const { return _nscannedObjects + _oldNscannedObjects; }
         bool saveClientCursor() const { return _saveClientCursor; }
-
+        bool wouldSaveClientCursor() const { return _wouldSaveClientCursor; }
+        
     private:
         BufBuilder _buf;
         const ParsedQuery& _pq;
@@ -754,12 +782,17 @@ namespace mongo {
         
         MatchDetails _details;
 
+        ChunkMatcherPtr _chunkMatcher;
+        
         bool _inMemSort;
         auto_ptr< ScanAndOrder > _so;
         
         shared_ptr<Cursor> _c;
+        shared_ptr<ClientCursor> _cc;
+        ElapsedTracker _yieldTracker;
 
         bool _saveClientCursor;
+        bool _wouldSaveClientCursor;
         bool _oplogReplay;
         auto_ptr< FindingStartCursor > _findingStartCursor;
         
@@ -769,83 +802,89 @@ namespace mongo {
     };
     
     /* run a query -- includes checking for and running a Command */
-    void runQuery(Message& m, QueryMessage& q, CurOp& curop, Message &result) {
+    const char *runQuery(Message& m, QueryMessage& q, CurOp& curop, Message &result) {
         StringBuilder& ss = curop.debug().str;
         shared_ptr<ParsedQuery> pq_shared( new ParsedQuery(q) );
         ParsedQuery& pq( *pq_shared );
-        const char *ns = q.ns;
         int ntoskip = q.ntoskip;
         BSONObj jsobj = q.query;
         int queryOptions = q.queryOptions;
-        BSONObj snapshotHint;
+        const char *ns = q.ns;
         
         if( logLevel >= 2 )
             log() << "query: " << ns << jsobj << endl;
         
-        long long nscanned = 0;
         ss << ns;
         {
-            // only insert if nonzero. 
+            // only say ntoreturn if nonzero. 
             int n =  pq.getNumToReturn();
             if( n ) 
                 ss << " ntoreturn:" << n;
         }
         curop.setQuery(jsobj);
         
-        BSONObjBuilder cmdResBuf;
-        long long cursorid = 0;
-        
-        int n = 0;
-        
-        Client& c = cc();
-
-        if ( pq.couldBeCommand() ){
+        if ( pq.couldBeCommand() ) {
             BufBuilder bb;
             bb.skip(sizeof(QueryResult));
-
+            BSONObjBuilder cmdResBuf;
             if ( runCommands(ns, jsobj, curop, bb, cmdResBuf, false, queryOptions) ) {
                 ss << " command: " << jsobj;
                 curop.markCommand();
-                n = 1;
                 auto_ptr< QueryResult > qr;
                 qr.reset( (QueryResult *) bb.buf() );
                 bb.decouple();
                 qr->setResultFlagsToOk();
                 qr->len = bb.len();
                 ss << " reslen:" << bb.len();
-                //	qr->channel = 0;
                 qr->setOperation(opReply);
-                qr->cursorId = cursorid;
+                qr->cursorId = 0;
                 qr->startingFrom = 0;
-                qr->nReturned = n;
+                qr->nReturned = 1;
                 result.setData( qr.release(), true );
             }
-            return;
+            return false;
         }
         
-        // regular query
+        /* --- regular query --- */
 
-        mongolock lk(false); // read lock
+        int n = 0;
+        BSONElement hint = useHints ? pq.getHint() : BSONElement();
+        bool explain = pq.isExplain();
+        bool snapshot = pq.isSnapshot();
+        BSONObj order = pq.getOrder();
+        BSONObj query = pq.getFilter();
+
+        /* The ElemIter will not be happy if this isn't really an object. So throw exception
+           here when that is true.
+           (Which may indicate bad data from client.)
+        */
+        if ( query.objsize() == 0 ) {
+            out() << "Bad query object?\n  jsobj:";
+            out() << jsobj.toString() << "\n  query:";
+            out() << query.toString() << endl;
+            uassert( 10110 , "bad query object", false);
+        }
+            
+        /* --- read lock --- */
+
+        mongolock lk(false);
+
         Client::Context ctx( ns , dbpath , &lk );
 
         replVerifyReadsOk(pq);
 
-        BSONElement hint = useHints ? pq.getHint() : BSONElement();
-        bool explain = pq.isExplain();
-        bool snapshot = pq.isSnapshot();
-        BSONObj query = pq.getFilter();
-        BSONObj order = pq.getOrder();
-
         if ( pq.hasOption( QueryOption_CursorTailable ) ) {
             NamespaceDetails *d = nsdetails( ns );
             uassert( 13051, "tailable cursor requested on non capped collection", d && d->capped );
+            const BSONObj nat1 = BSON( "$natural" << 1 );
             if ( order.isEmpty() ) {
-                order = BSON( "$natural" << 1 );
+                order = nat1;
             } else {
-                uassert( 13052, "only {$natural:1} order allowed for tailable cursor", order == BSON( "$natural" << 1 ) );
+                uassert( 13052, "only {$natural:1} order allowed for tailable cursor", order == nat1 );
             }
         }
         
+        BSONObj snapshotHint; // put here to keep the data in scope
         if( snapshot ) { 
             NamespaceDetails *d = nsdetails(ns);
             if ( d ){
@@ -867,24 +906,12 @@ namespace mongo {
             }
         }
             
-        /* The ElemIter will not be happy if this isn't really an object. So throw exception
-           here when that is true.
-           (Which may indicate bad data from client.)
-        */
-        if ( query.objsize() == 0 ) {
-            out() << "Bad query object?\n  jsobj:";
-            out() << jsobj.toString() << "\n  query:";
-            out() << query.toString() << endl;
-            uassert( 10110 , "bad query object", false);
-        }
-            
         if ( ! (explain || pq.showDiskLoc()) && isSimpleIdQuery( query ) && !pq.hasOption( QueryOption_CursorTailable ) ) {
-            nscanned = 1;
-
             bool nsFound = false;
             bool indexFound = false;
 
             BSONObj resObject;
+            Client& c = cc();
             bool found = Helpers::findById( c, ns , query , resObject , &nsFound , &indexFound );
             if ( nsFound == false || indexFound == true ){
                 BufBuilder bb(sizeof(QueryResult)+resObject.objsize()+32);
@@ -902,11 +929,11 @@ namespace mongo {
                 qr->len = bb.len();
                 ss << " reslen:" << bb.len();
                 qr->setOperation(opReply);
-                qr->cursorId = cursorid;
+                qr->cursorId = 0;
                 qr->startingFrom = 0;
                 qr->nReturned = n;      
                 result.setData( qr.release(), true );
-                return;
+                return false;
             }     
         }
         
@@ -930,17 +957,21 @@ namespace mongo {
         UserQueryOp original( pq, result, eb, curop );
         shared_ptr< UserQueryOp > o = mps->runOp( original );
         UserQueryOp &dqo = *o;
-        massert( 10362 ,  dqo.exceptionMessage(), dqo.complete() );
+        if ( ! dqo.complete() )
+            throw MsgAssertionException( dqo.exception() );
         if ( explain ) {
             dqo.finishExplain( explainSuffix );
         }
         n = dqo.n();
-        nscanned = dqo.nscanned();
+        long long nscanned = dqo.nscanned();
         if ( dqo.scanAndOrderRequired() )
             ss << " scanAndOrder ";
         shared_ptr<Cursor> cursor = dqo.cursor();
-        log( 5 ) << "   used cursor: " << cursor.get() << endl;
-        if ( dqo.saveClientCursor() || mps->mayRunMore() ) {
+        if( logLevel >= 5 )
+            log() << "   used cursor: " << cursor.get() << endl;
+        long long cursorid = 0;
+        const char * exhaust = 0;
+        if ( dqo.saveClientCursor() || ( dqo.wouldSaveClientCursor() && mps->mayRunMore() ) ) {
             ClientCursor *cc;
             bool moreClauses = mps->mayRunMore();
             if ( moreClauses ) {
@@ -952,16 +983,17 @@ namespace mongo {
             }
             cursorid = cc->cursorid;
             cc->query = jsobj.getOwned();
-            DEV tlog() << "  query has more, cursorid: " << cursorid << endl;
+            DEV tlog() << "query has more, cursorid: " << cursorid << endl;
             cc->pos = n;
             cc->pq = pq_shared;
             cc->fields = pq.getFieldPtr();
             cc->originalMessage = m;
             cc->updateLocation();
-            if ( !cc->c->ok() && cc->c->tailable() ) {
-                DEV tlog() << "  query has no more but tailable, cursorid: " << cursorid << endl;
-            } else {
-                DEV tlog() << "  query has more, cursorid: " << cursorid << endl;
+            if ( !cc->c->ok() && cc->c->tailable() )
+                DEV tlog() << "query has no more but tailable, cursorid: " << cursorid << endl;
+            if( queryOptions & QueryOption_Exhaust ) {
+                exhaust = ns;
+                ss << " exhaust ";
             }
         }
 
@@ -985,7 +1017,7 @@ namespace mongo {
             ss << jsobj << ' ';
         }
         ss << " nreturned:" << n;
-        return;
+        return exhaust;
     }    
     
 } // namespace mongo

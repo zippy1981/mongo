@@ -21,22 +21,27 @@
 #pragma once
 
 #if defined(MONGO_EXPOSE_MACROS)
-#define JS_C_STRINGS_ARE_UTF8
-#undef _UNICODE
-#define _UNICODE
-#undef UNICODE
-#define UNICODE
-#undef SUPPORT_UCP
-#define SUPPORT_UCP
-#undef SUPPORT_UTF8
-#define SUPPORT_UTF8
+# define JS_C_STRINGS_ARE_UTF8
+# undef  SUPPORT_UCP
+# define SUPPORT_UCP
+# undef  SUPPORT_UTF8
+# define SUPPORT_UTF8
+# undef  _CRT_SECURE_NO_WARNINGS
+# define _CRT_SECURE_NO_WARNINGS
+#endif
+
+#if defined(WIN32)
+// so you don't have to define this yourself as the code seems to use it...
+#undef _WIN32
+#define _WIN32
 #endif
 
 #if defined(_WIN32)
-#  define NOMINMAX
-#  include <winsock2.h> //this must be included before the first windows.h include
-#  include <ws2tcpip.h>
-#  include <windows.h>
+# define NOMINMAX
+# include <winsock2.h> //this must be included before the first windows.h include
+# include <ws2tcpip.h>
+# include <wspiapi.h>
+# include <windows.h>
 #endif
 
 #include <ctime>
@@ -65,13 +70,13 @@
 #include <boost/program_options.hpp>
 #include <boost/shared_ptr.hpp>
 #include <boost/smart_ptr.hpp>
+#include <boost/function.hpp>
 #include "boost/bind.hpp"
 #include "boost/function.hpp"
 #include <boost/thread/tss.hpp>
 #include "boost/detail/endian.hpp"
 #define BOOST_SPIRIT_THREADSAFE
 #include <boost/version.hpp>
-
 #include <boost/tuple/tuple.hpp>
 #include <boost/thread/thread.hpp>
 #include <boost/thread/condition.hpp>
