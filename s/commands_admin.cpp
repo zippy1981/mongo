@@ -802,7 +802,7 @@ namespace mongo {
                     conn.done();
                     
                     // hit other machines just to block
-                    for ( set<string>::iterator i=client->sinceLastGetError().begin(); i!=client->sinceLastGetError().end(); ++i ){
+                    for ( set<string>::const_iterator i=client->sinceLastGetError().begin(); i!=client->sinceLastGetError().end(); ++i ){
                         string temp = *i;
                         if ( temp == theShard )
                             continue;
@@ -829,7 +829,7 @@ namespace mongo {
                 }
                 
                 // hit other machines just to block
-                for ( set<string>::iterator i=client->sinceLastGetError().begin(); i!=client->sinceLastGetError().end(); ++i ){
+                for ( set<string>::const_iterator i=client->sinceLastGetError().begin(); i!=client->sinceLastGetError().end(); ++i ){
                     string temp = *i;
                     if ( shards->count( temp ) )
                         continue;
