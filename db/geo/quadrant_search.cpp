@@ -16,7 +16,7 @@
  *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "../../pch.h"
+#include "pch.h"
 #include "../namespace.h"
 #include "../jsobj.h"
 #include "../index.h"
@@ -158,21 +158,21 @@ namespace mongo {
         }
             
         void searchCommand( NamespaceDetails* nsd , int idxNo ,  
-                            const BSONObj& near , double maxDistance , const BSONObj& search , 
+                            const BSONObj& nearby , double maxDistance , const BSONObj& search , 
                             BSONObjBuilder& result , unsigned limit = 50 ){
          
             Timer t;
 
-            log(1) << "SEARCH near:" << near << " maxDistance:" << maxDistance << " search: " << search << endl;
+            log(1) << "SEARCH near:" << nearby << " maxDistance:" << maxDistance << " search: " << search << endl;
             int x,y;
             {
-                BSONObjIterator i( near );
+                BSONObjIterator i( nearby );
                 x = hash( i.next() );
                 y = hash( i.next() );
             }
             int scale = (int)ceil( maxDistance / _bucketSize );
                 
-            GeoQuandrantSearchHopper hopper(near,maxDistance,limit,_geo);
+            GeoQuandrantSearchHopper hopper(nearby,maxDistance,limit,_geo);
                 
             long long btreeMatches = 0;
 
@@ -278,15 +278,15 @@ namespace mongo {
             GeoQuandrantSearchIndex * si = (GeoQuandrantSearchIndex*)id.getSpec().getType();
             assert( &id == si->getDetails() );         
                 
-            BSONElement near = cmdObj["near"];
+            BSONElement nearby = cmdObj["near"];
             BSONElement maxDistance = cmdObj["maxDistance"];
             BSONElement search = cmdObj["search"];
             
-            uassert( 13318 , "near needs to be an array" , near.isABSONObj() );
+            uassert( 13318 , "near needs to be an array" , nearby.isABSONObj() );
             uassert( 13319 , "maxDistance needs a number" , maxDistance.isNumber() );
             uassert( 13320 , "search needs to be an object" , search.type() == Object );
 
-            si->searchCommand( d , idxNum , near.Obj() , maxDistance.numberDouble() , search.Obj() , result );
+            si->searchCommand( d , idxNum , nearby.Obj() , maxDistance.numberDouble() , search.Obj() , result );
             
             return 1;
         }
