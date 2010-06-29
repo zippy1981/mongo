@@ -34,19 +34,12 @@ namespace mongo {
 
         int len(){
             int len;
-            const char * data = _data["data"].binDataClean( len );
-            int * foo = (int*)data;
-            assert( len == foo[0] );
+            _data["data"].binDataClean( len );
             return len;
         }
 
         const char * data( int & len ){
-            const char * data = _data["data"].binDataClean( len );
-            int * foo = (int*)data;
-            assert( len == foo[0] );
-
-            len = len;
-            return data;
+            return _data["data"].binDataClean( len );
         }
 
     private:

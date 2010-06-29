@@ -82,13 +82,15 @@ namespace mongo {
         unsigned yea(unsigned memberId); // throws VoteException
         void _electSelf();
         bool weAreFreshest(bool& allUp, int& nTies);
+        bool sleptLast; // slept last elect() pass
     public:
-        Consensus(ReplSetImpl *t) : rs(*t) { }
+        Consensus(ReplSetImpl *t) : rs(*t) { 
+            sleptLast = false;
+        }
         int totalVotes() const;
         bool aMajoritySeemsToBeUp() const;
         void electSelf();
         void electCmdReceived(BSONObj, BSONObjBuilder*);
-
         void multiCommand(BSONObj cmd, list<Target>& L);
     };
 
@@ -152,6 +154,9 @@ namespace mongo {
         //bool initiated() const { return curOpTime.initiated(); }
 
         OpTime lastOpTimeWritten;
+        long long h;
+    private:
+        unsigned _selfId; // stored redundantly we hit this a lot
 
     private:
         Consensus elect;
@@ -204,6 +209,7 @@ namespace mongo {
         List1<Member> _members; /* all members of the set EXCEPT self. */
 
     public:
+        unsigned selfId() const { return _selfId; }
         shared_ptr<Manager> mgr;
 
     private:

@@ -63,7 +63,11 @@ namespace mongo {
         bufbuilder.reset();
         BSONObjBuilder b(bufbuilder);
         massert(13312, "replSet error : logOp() but not primary?", theReplSet->isPrimary());
+
         b.appendTimestamp("ts", ts.asDate());
+        long long hNew = (theReplSet->h * 131 + ts.asLL()) * 17 + theReplSet->selfId();
+        b.append("h", hNew);
+
         b.append("op", opstr);
         b.append("ns", ns);
         if ( bb )
@@ -87,7 +91,12 @@ namespace mongo {
             }
             Client::Context ctx( "" , localDB, false );
             r = theDataFileMgr.fast_oplog_insert(localOplogMainDetails, logns, len);
+            /* todo: now() has code to handle clock skew.  but if the skew server to server is large it will get unhappy.
+                     this code (or code in now() maybe) should be improved.
+                     */
+            massert(13324, "rs error possible failover clock skew issue?", theReplSet->lastOpTimeWritten < ts);
             theReplSet->lastOpTimeWritten = ts;
+            theReplSet->h = hNew;
             ctx.getClient()->setLastOp( ts.asDate() );
         }
 
@@ -356,5 +365,135 @@ namespace mongo {
             assert( !(q != t) );
         }
     } testoptime;
+
+    void applyOperation_inlock(const BSONObj& op){
+        log( 6 ) << "applying op: " << op << endl;
+        
+        assertInWriteLock();
+
+        OpDebug debug;
+        BSONObj o = op.getObjectField("o");
+        const char *ns = op.getStringField("ns");
+        // operation type -- see logOp() comments for types
+        const char *opType = op.getStringField("op");
+
+        if ( *opType == 'i' ) {
+            const char *p = strchr(ns, '.');
+            if ( p && strcmp(p, ".system.indexes") == 0 ) {
+                // updates aren't allowed for indexes -- so we will do a regular insert. if index already
+                // exists, that is ok.
+                theDataFileMgr.insert(ns, (void*) o.objdata(), o.objsize());
+            }
+            else {
+                // do upserts for inserts as we might get replayed more than once
+                BSONElement _id;
+                if( !o.getObjectID(_id) ) {
+                    /* No _id.  This will be very slow. */
+                    Timer t;
+                    updateObjects(ns, o, o, true, false, false , debug );
+                    if( t.millis() >= 2 ) {
+                        RARELY OCCASIONALLY log() << "warning, repl doing slow updates (no _id field) for " << ns << endl;
+                    }
+                }
+                else {
+                    BSONObjBuilder b;
+                    b.append(_id);
+                    
+                    /* erh 10/16/2009 - this is probably not relevant any more since its auto-created, but not worth removing */
+                    RARELY ensureHaveIdIndex(ns); // otherwise updates will be slow 
+                    
+                    updateObjects(ns, o, b.done(), true, false, false , debug );
+                }
+            }
+        }
+        else if ( *opType == 'u' ) {
+            RARELY ensureHaveIdIndex(ns); // otherwise updates will be super slow
+            updateObjects(ns, o, op.getObjectField("o2"), op.getBoolField("b"), false, false , debug );
+        }
+        else if ( *opType == 'd' ) {
+            if ( opType[1] == 0 )
+                deleteObjects(ns, o, op.getBoolField("b"));
+            else
+                assert( opType[1] == 'b' ); // "db" advertisement
+        }
+        else if ( *opType == 'n' ) {
+            // no op
+        }
+        else if ( *opType == 'c' ){
+            BufBuilder bb;
+            BSONObjBuilder ob;
+            _runCommands(ns, o, bb, ob, true, 0);
+        }
+        else {
+            stringstream ss;
+            ss << "unknown opType [" << opType << "]";
+            throw MsgAssertionException( 13141 , ss.str() );
+        }
+        
+    }
+    
+    class ApplyOpsCmd : public Command {
+    public:
+        virtual bool slaveOk() const { return false; }
+        virtual LockType locktype() const { return WRITE; }
+        ApplyOpsCmd() : Command( "applyOps" ) {}
+        virtual void help( stringstream &help ) const {
+            help << "examples: { applyOps : [ ] , preCondition : [ { ns : ... , q : ... , res : ... } ] }";
+        }
+        virtual bool run(const string& dbname, BSONObj& cmdObj, string& errmsg, BSONObjBuilder& result, bool fromRepl) {
+            
+            if ( cmdObj.firstElement().type() != Array ){
+                errmsg = "ops has to be an array";
+                return false;
+            }
+            
+            BSONObj ops = cmdObj.firstElement().Obj();
+            
+            { // check input
+                BSONObjIterator i( ops );
+                while ( i.more() ){
+                    BSONElement e = i.next();
+                    if ( e.type() == Object )
+                        continue;
+                    errmsg = "op not an object: ";
+                    errmsg += e.fieldName();
+                    return false;
+                }
+            }
+            
+            if ( cmdObj["preCondition"].type() == Array ){
+                BSONObjIterator i( cmdObj["preCondition"].Obj() );
+                while ( i.more() ){
+                    BSONObj f = i.next().Obj();
+                    
+                    BSONObj realres = db.findOne( f["ns"].String() , f["q"].Obj() );
+                    
+                    Matcher m( f["res"].Obj() );
+                    if ( ! m.matches( realres ) ){
+                        result.append( "got" , realres );
+                        result.append( "whatFailed" , f );
+                        errmsg = "pre-condition failed";
+                        return false;
+                    }
+                }
+            }
+            
+            // apply
+            int num = 0;
+            BSONObjIterator i( ops );
+            while ( i.more() ){
+                BSONElement e = i.next();
+                applyOperation_inlock( e.Obj() );
+                num++;
+            }
+
+            result.append( "applied" , num );
+
+            return true;
+        }
+
+        DBDirectClient db;
+        
+    } applyOpsCmd;
 
 }
