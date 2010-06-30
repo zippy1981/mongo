@@ -248,7 +248,7 @@ namespace mongo {
             ShardChunkVersion newVersion = _manager->getVersion( from );
             if ( newVersion == 0 && oldVersion > 0 ){
                 newVersion = oldVersion;
-                newVersion++;
+                ++newVersion;
                 _manager->save();
             }
             else if ( newVersion <= oldVersion ){
@@ -410,10 +410,10 @@ namespace mongo {
         
         to.append( "_id" , genID( _ns , _min ) );
 
-        if ( myLastMod ){
-            to.append( "lastmod" , (long long)myLastMod );
+        if ( myLastMod.isSet() ){
+            to.appendTimestamp( "lastmod" , myLastMod );
         }
-        else if ( _lastmod ){
+        else if ( _lastmod.isSet() ){
             assert( _lastmod > 0 && _lastmod < 1000 );
             to.appendTimestamp( "lastmod" , _lastmod );
         }
@@ -482,7 +482,7 @@ namespace mongo {
 
     string Chunk::toString() const {
         stringstream ss;
-        ss << "shard  ns:" << _ns << " shard: " << _shard.toString() << " lastmod: " << _lastmod << " min: " << _min << " max: " << _max;
+        ss << "shard  ns:" << _ns << " shard: " << _shard.toString() << " lastmod: " << _lastmod.toString() << " min: " << _min << " max: " << _max;
         return ss.str();
     }
     
@@ -515,6 +515,8 @@ namespace mongo {
             _chunkMap[c->getMax()] = c;
             _chunkRanges.reloadAll(_chunkMap);
 
+            _shards.insert(c->getShard());
+
             save_inlock();
             log() << "no chunks for:" << ns << " so creating first: " << c->toString() << endl;
             
@@ -526,6 +528,7 @@ namespace mongo {
         _chunks.clear();
         _chunkMap.clear();
         _chunkRanges.clear();
+        _shards.clear();
     }
     
     void ChunkManager::_reload(){
@@ -539,6 +542,7 @@ namespace mongo {
             _chunks.clear();
             _chunkMap.clear();
             _chunkRanges.clear();
+            _shards.clear();
             _load();
 
             if (_isValid()){
@@ -571,6 +575,7 @@ namespace mongo {
 
             _chunks.push_back( c );
             _chunkMap[c->getMax()] = c;
+            _shards.insert(c->getShard());
 
         }
         conn.done();
@@ -740,11 +745,7 @@ namespace mongo {
 
     void ChunkManager::getAllShards( set<Shard>& all ){
         rwlock lk( _lock , false ); 
-        
-        // TODO: cache this
-        for ( vector<ChunkPtr>::iterator i=_chunks.begin(); i != _chunks.end(); i++  ){
-            all.insert( (*i)->getShard() );
-        }        
+        all = _shards;
     }
     
     void ChunkManager::ensureIndex(){
@@ -774,10 +775,10 @@ namespace mongo {
         for ( vector<ChunkPtr>::const_iterator i=_chunks.begin(); i!=_chunks.end(); i++ ){
             ChunkPtr c = *i;
             ShardChunkVersion& version = seen[ c->getShard() ];
-            if ( version ) 
+            if ( version.isSet() ) 
                 continue;
             version = lockNamespaceOnServer( c->getShard() , _ns );
-            if ( version )
+            if ( version.isSet() )
                 continue;
 
             // rollback
@@ -790,6 +791,7 @@ namespace mongo {
         _chunks.clear();
         _chunkMap.clear();
         _chunkRanges.clear();
+        _shards.clear();
 
         
         // delete data from mongod
@@ -833,11 +835,8 @@ namespace mongo {
     void ChunkManager::save_inlock(){
         
         ShardChunkVersion a = getVersion_inlock();
-        cout << "a: " << a << " _chunks.size(): " << _chunks.size() << endl;
-        _printChunks();
         assert( a > 0 || _chunks.size() <= 1 );
-        ShardChunkVersion nextChunkVersion = a;
-        
+        ShardChunkVersion nextChunkVersion = a.incMajor();
         vector<ChunkPtr> toFix;
         vector<ShardChunkVersion> newVersions;
         
@@ -854,7 +853,8 @@ namespace mongo {
             numOps++;
             _sequenceNumber = ++NextSequenceNumber;
 
-            ShardChunkVersion myVersion = ++nextChunkVersion;
+            ShardChunkVersion myVersion = nextChunkVersion;
+            ++nextChunkVersion;
             toFix.push_back( c );
             newVersions.push_back( myVersion );
 
@@ -886,7 +886,7 @@ namespace mongo {
             b.append( "q" , BSON( "query" << BSON( "ns" << _ns ) << "orderby" << BSON( "lastmod" << -1 ) ) );
             {
                 BSONObjBuilder bb( b.subobjStart( "res" ) );
-                bb.append( "lastmod" , (long long)a );
+                bb.appendTimestamp( "lastmod" , a );
                 bb.done();
             }
             temp.append( b.obj() );
@@ -964,6 +964,7 @@ namespace mongo {
 
     void ChunkManager::_migrationNotification(Chunk* c){
         _chunkRanges.reloadRange(_chunkMap, c->getMin(), c->getMax());
+        _shards.insert(c->getShard());
     }
 
     
@@ -1109,8 +1110,24 @@ namespace mongo {
             assert( c );
         }
         
+        void runShardChunkVersion(){
+            vector<ShardChunkVersion> all;
+            all.push_back( ShardChunkVersion(1,1) );
+            all.push_back( ShardChunkVersion(1,2) );
+            all.push_back( ShardChunkVersion(2,1) );
+            all.push_back( ShardChunkVersion(2,2) );
+            
+            for ( unsigned i=0; i<all.size(); i++ ){
+                for ( unsigned j=i+1; j<all.size(); j++ ){
+                    assert( all[i] < all[j] );
+                }
+            }
+
+        }
+
         void run(){
             runShard();
+            runShardChunkVersion();
             log(1) << "shardObjTest passed" << endl;
         }
     } shardObjTest;
