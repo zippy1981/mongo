@@ -101,6 +101,7 @@ namespace mongo {
     public:
 
         Chunk( ChunkManager * info );
+        Chunk( ChunkManager * info , const BSONObj& min, const BSONObj& max, const Shard& shard);
         
         const BSONObj& getMin() const { return _min; }
         const BSONObj& getMax() const { return _max; }
@@ -176,11 +177,12 @@ namespace mongo {
         
         static int MaxChunkSize;
 
-        string genID(){ return genID( _ns , _min ); }
+        string genID();
         static string genID( const string& ns , const BSONObj& min );
 
         const ChunkManager* getManager() const { return _manager; }
         
+        bool modified();
     private:
         
         // main shard info
@@ -188,7 +190,6 @@ namespace mongo {
         ChunkManager * _manager;
         ShardKeyPattern skey() const;
 
-        string _ns;
         BSONObj _min;
         BSONObj _max;
         Shard _shard;
@@ -299,8 +300,7 @@ namespace mongo {
             return _ns;
         }
         
-        int numChunks(){ rwlock lk( _lock , false ); return _chunks.size(); }
-        ChunkPtr getChunk( int i ){ rwlock lk( _lock , false ); return _chunks[i]; }
+        int numChunks(){ rwlock lk( _lock , false ); return _chunkMap.size(); }
         bool hasShardKey( const BSONObj& obj );
 
         ChunkPtr findChunk( const BSONObj& obj , bool retry = false );
@@ -361,7 +361,6 @@ namespace mongo {
         ShardKeyPattern _key;
         bool _unique;
         
-        vector<ChunkPtr> _chunks;
         map<string,unsigned long long> _maxMarkers;
 
         ChunkMap _chunkMap;
@@ -413,5 +412,6 @@ namespace mongo {
     };
 
 
+    inline string Chunk::genID(){ return genID(_manager->getns(), _min); }
 
 } // namespace mongo

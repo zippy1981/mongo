@@ -183,7 +183,7 @@ namespace mongo {
                     string s = BSONObjBuilder::numStr( num++ );
 
                     BSONObj o = cursor->next();
-                    list.append( s.c_str() , o["name"].valuestrsafe() );
+                    list.append( s.c_str() , o["_id"].valuestrsafe() );
                 }
 
                 result.appendArray("databases" , list.obj() );
@@ -351,11 +351,11 @@ namespace mongo {
                     BSONObjBuilder b; 
                     b.append( "ns" , ns ); 
                     b.appendBool( "unique" , true ); 
-                    
+
                     auto_ptr<DBClientCursor> cursor = conn->query( config->getName() + ".system.indexes" , b.obj() );
                     while ( cursor->more() ){
                         BSONObj idx = cursor->next();
-                        if ( proposedKey.uniqueAllowd( idx["key"].embeddedObjectUserCheck() ) )
+                        if ( proposedKey.isPrefixOf( idx["key"].embeddedObjectUserCheck() ) )
                             continue;
                         errmsg = (string)"can't shard collection with unique index on: " + idx.toString();
                         conn.done();
@@ -675,11 +675,6 @@ namespace mongo {
                 help << "remove a shard to the system.";
             }
             bool run(const string& , BSONObj& cmdObj, string& errmsg, BSONObjBuilder& result, bool){
-                if ( ! cmdObj["forTestingOnly"].trueValue() ){
-                    errmsg = "removeshard not yet implemented";
-                    return false;
-                }
-
                 string shard = cmdObj["removeshard"].valuestrsafe();
                 if ( ! grid.knowAboutShard( shard ) ){
                     errmsg = "unknown shard";
