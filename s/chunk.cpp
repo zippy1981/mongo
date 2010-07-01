@@ -248,7 +248,7 @@ namespace mongo {
             ShardChunkVersion newVersion = _manager->getVersion( from );
             if ( newVersion == 0 && oldVersion > 0 ){
                 newVersion = oldVersion;
-                newVersion++;
+                ++newVersion;
                 _manager->save();
             }
             else if ( newVersion <= oldVersion ){
@@ -406,14 +406,20 @@ namespace mongo {
         _manager->getShardKey().getFilter( b , _min , _max );
     }
     
-    void Chunk::serialize(BSONObjBuilder& to){
+    void Chunk::serialize(BSONObjBuilder& to,ShardChunkVersion myLastMod){
         
         to.append( "_id" , genID( _ns , _min ) );
 
-        if ( _lastmod )
+        if ( myLastMod.isSet() ){
+            to.appendTimestamp( "lastmod" , myLastMod );
+        }
+        else if ( _lastmod.isSet() ){
+            assert( _lastmod > 0 && _lastmod < 1000 );
             to.appendTimestamp( "lastmod" , _lastmod );
-        else 
-            to.appendTimestamp( "lastmod" );
+        }
+        else {
+            assert(0);
+        }
 
         to << "ns" << _ns;
         to << "min" << _min;
@@ -437,7 +443,9 @@ namespace mongo {
     void Chunk::unserialize(const BSONObj& from){
         _ns = from.getStringField( "ns" );
         _shard.reset( from.getStringField( "shard" ) );
+
         _lastmod = from.hasField( "lastmod" ) ? from["lastmod"]._numberLong() : 0;
+        assert( _lastmod > 0 );
 
         BSONElement e = from["minDotted"];
 
@@ -464,27 +472,8 @@ namespace mongo {
     
     void Chunk::_markModified(){
         _modified = true;
-        // set to 0 so that the config server sets it
-        _lastmod = 0;
     }
 
-    void Chunk::save( bool check ){
-        bool reload = ! _lastmod;
-        Model::save( check );
-        if ( reload ){
-            // need to do this so that we get the new _lastMod and therefore version number
-            massert( 10413 ,  "_id has to be filled in already" , ! _id.isEmpty() );
-            
-            string b = toString();
-            BSONObj q = _id.copy();
-            massert( 10414 ,  "how could load fail?" , load( q ) );
-            log(2) << "before: " << q << "\t" << b << endl;
-            log(2) << "after : " << _id << "\t" << toString() << endl;
-            massert( 10415 ,  "chunk reload changed content!" , b == toString() );
-            massert( 10416 ,  "id changed!" , q["_id"] == _id["_id"] );
-        }
-    }
-    
     void Chunk::ensureIndex(){
         ScopedDbConnection conn( getShard().getConnString() );
         conn->ensureIndex( _ns , _manager->getShardKey().key() , _manager->_unique );
@@ -493,7 +482,7 @@ namespace mongo {
 
     string Chunk::toString() const {
         stringstream ss;
-        ss << "shard  ns:" << _ns << " shard: " << _shard.toString() << " min: " << _min << " max: " << _max;
+        ss << "shard  ns:" << _ns << " shard: " << _shard.toString() << " lastmod: " << _lastmod.toString() << " min: " << _min << " max: " << _max;
         return ss.str();
     }
     
@@ -526,7 +515,11 @@ namespace mongo {
             _chunkMap[c->getMax()] = c;
             _chunkRanges.reloadAll(_chunkMap);
 
+            _shards.insert(c->getShard());
+
+            save_inlock();
             log() << "no chunks for:" << ns << " so creating first: " << c->toString() << endl;
+            
         }
 
     }
@@ -535,6 +528,7 @@ namespace mongo {
         _chunks.clear();
         _chunkMap.clear();
         _chunkRanges.clear();
+        _shards.clear();
     }
     
     void ChunkManager::_reload(){
@@ -548,6 +542,7 @@ namespace mongo {
             _chunks.clear();
             _chunkMap.clear();
             _chunkRanges.clear();
+            _shards.clear();
             _load();
 
             if (_isValid()){
@@ -577,10 +572,10 @@ namespace mongo {
             
             ChunkPtr c( new Chunk( this ) );
             c->unserialize( d );
-            c->_id = d["_id"].wrap().getOwned();
 
             _chunks.push_back( c );
             _chunkMap[c->getMax()] = c;
+            _shards.insert(c->getShard());
 
         }
         conn.done();
@@ -750,11 +745,7 @@ namespace mongo {
 
     void ChunkManager::getAllShards( set<Shard>& all ){
         rwlock lk( _lock , false ); 
-        
-        // TODO: cache this
-        for ( vector<ChunkPtr>::iterator i=_chunks.begin(); i != _chunks.end(); i++  ){
-            all.insert( (*i)->getShard() );
-        }        
+        all = _shards;
     }
     
     void ChunkManager::ensureIndex(){
@@ -784,10 +775,10 @@ namespace mongo {
         for ( vector<ChunkPtr>::const_iterator i=_chunks.begin(); i!=_chunks.end(); i++ ){
             ChunkPtr c = *i;
             ShardChunkVersion& version = seen[ c->getShard() ];
-            if ( version ) 
+            if ( version.isSet() ) 
                 continue;
             version = lockNamespaceOnServer( c->getShard() , _ns );
-            if ( version )
+            if ( version.isSet() )
                 continue;
 
             // rollback
@@ -800,6 +791,7 @@ namespace mongo {
         _chunks.clear();
         _chunkMap.clear();
         _chunkRanges.clear();
+        _shards.clear();
 
         
         // delete data from mongod
@@ -837,23 +829,88 @@ namespace mongo {
     
     void ChunkManager::save(){
         rwlock lk( _lock , false ); 
+        save_inlock();
+    }
+    
+    void ChunkManager::save_inlock(){
         
-        ShardChunkVersion a = getVersion();
+        ShardChunkVersion a = getVersion_inlock();
+        assert( a > 0 || _chunks.size() <= 1 );
+        ShardChunkVersion nextChunkVersion = a.incMajor();
+        vector<ChunkPtr> toFix;
+        vector<ShardChunkVersion> newVersions;
         
-        set<Shard> withRealChunks;
+        BSONObjBuilder cmdBuilder;
+        BSONArrayBuilder updates( cmdBuilder.subarrayStart( "applyOps" ) );
         
+        
+        int numOps = 0;
         for ( vector<ChunkPtr>::const_iterator i=_chunks.begin(); i!=_chunks.end(); i++ ){
             ChunkPtr c = *i;
             if ( ! c->_modified )
                 continue;
-            c->save( true );
+
+            numOps++;
             _sequenceNumber = ++NextSequenceNumber;
 
-            withRealChunks.insert( c->getShard() );
+            ShardChunkVersion myVersion = nextChunkVersion;
+            ++nextChunkVersion;
+            toFix.push_back( c );
+            newVersions.push_back( myVersion );
+
+            BSONObjBuilder op;
+            op.append( "op" , "u" );
+            op.appendBool( "b" , true );
+            op.append( "ns" , ShardNS::chunk );
+
+            BSONObjBuilder n( op.subobjStart( "o" ) );
+            c->serialize( n , myVersion );
+            n.done();
+
+            BSONObjBuilder q( op.subobjStart( "o2" ) );
+            q.append( "_id" , c->genID() );
+            q.done();
+
+            updates.append( op.obj() );
         }
         
-        massert( 10417 ,  "how did version get smalled" , getVersion() >= a );
+        if ( numOps == 0 )
+            return;
+        
+        updates.done();
+        
+        if ( a > 0 || _chunks.size() > 1 ){
+            BSONArrayBuilder temp( cmdBuilder.subarrayStart( "preCondition" ) );
+            BSONObjBuilder b;
+            b.append( "ns" , ShardNS::chunk );
+            b.append( "q" , BSON( "query" << BSON( "ns" << _ns ) << "orderby" << BSON( "lastmod" << -1 ) ) );
+            {
+                BSONObjBuilder bb( b.subobjStart( "res" ) );
+                bb.appendTimestamp( "lastmod" , a );
+                bb.done();
+            }
+            temp.append( b.obj() );
+            temp.done();
+        }
 
+        BSONObj cmd = cmdBuilder.obj();
+        
+        ScopedDbConnection conn( Chunk(0).modelServer() );
+        BSONObj res;
+        bool ok = conn->runCommand( "config" , cmd , res );
+        if ( ! ok ){
+            stringstream ss;
+            ss << "saving chunks failed.  cmd: " << cmd << " result: " << res;
+            log( LL_ERROR ) << ss.str() << endl;
+            msgasserted( 13327 , ss.str() );
+        }
+
+        for ( unsigned i=0; i<toFix.size(); i++ ){
+            toFix[i]->_lastmod = newVersions[i];
+        }
+
+        massert( 10417 ,  "how did version get smalled" , getVersion_inlock() >= a );
+        
         ensureIndex(); // TODO: this is too aggressive - but not really sooo bad
     }
     
@@ -875,6 +932,11 @@ namespace mongo {
     }
 
     ShardChunkVersion ChunkManager::getVersion() const{
+        rwlock lk( _lock , false ); 
+        return getVersion_inlock();
+    }
+    
+    ShardChunkVersion ChunkManager::getVersion_inlock() const{
         rwlock lk( _lock , false ); 
         
         ShardChunkVersion max = 0;
@@ -902,6 +964,7 @@ namespace mongo {
 
     void ChunkManager::_migrationNotification(Chunk* c){
         _chunkRanges.reloadRange(_chunkMap, c->getMin(), c->getMax());
+        _shards.insert(c->getShard());
     }
 
     
@@ -1047,8 +1110,24 @@ namespace mongo {
             assert( c );
         }
         
+        void runShardChunkVersion(){
+            vector<ShardChunkVersion> all;
+            all.push_back( ShardChunkVersion(1,1) );
+            all.push_back( ShardChunkVersion(1,2) );
+            all.push_back( ShardChunkVersion(2,1) );
+            all.push_back( ShardChunkVersion(2,2) );
+            
+            for ( unsigned i=0; i<all.size(); i++ ){
+                for ( unsigned j=i+1; j<all.size(); j++ ){
+                    assert( all[i] < all[j] );
+                }
+            }
+
+        }
+
         void run(){
             runShard();
+            runShardChunkVersion();
             log(1) << "shardObjTest passed" << endl;
         }
     } shardObjTest;
