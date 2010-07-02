@@ -838,9 +838,4 @@
       <Filter>libs</Filter>
     </Library>
   </ItemGroup>
-  <ItemGroup>
-    <ResourceCompile Include="db.rc">
-      <Filter>Resource Files</Filter>
-    </ResourceCompile>
-  </ItemGroup>
 </Project>

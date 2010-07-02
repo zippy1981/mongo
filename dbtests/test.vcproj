@@ -188,10 +188,6 @@
 				>
 			</File>
 			<File
-				RelativePath="..\db\db.rc"
-				>
-			</File>
-			<File
 				RelativePath="..\..\js\src\js.lib"
 				>
 			</File>
@@ -756,7 +752,19 @@
 				>
 			</File>
 			<File
+				RelativePath="..\client\model.cpp"
+				>
+			</File>
+			<File
 				RelativePath="..\client\model.h"
+				>
+			</File>
+			<File
+				RelativePath="..\client\parallel.cpp"
+				>
+			</File>
+			<File
+				RelativePath="..\client\parallel.h"
 				>
 			</File>
 			<File
@@ -1109,6 +1117,10 @@
 				RelativePath="..\util\unittest.h"
 				>
 			</File>
+			<File
+				RelativePath="..\util\version.h"
+				>
+			</File>
 			<Filter
 				Name="cpp"
 				>
@@ -1235,6 +1247,22 @@
 			Name="shard"
 			>
 			<File
+				RelativePath="..\s\chunk.cpp"
+				>
+			</File>
+			<File
+				RelativePath="..\s\chunk.h"
+				>
+			</File>
+			<File
+				RelativePath="..\s\config.cpp"
+				>
+			</File>
+			<File
+				RelativePath="..\s\config.h"
+				>
+			</File>
+			<File
 				RelativePath="..\s\d_logic.cpp"
 				>
 			</File>
@@ -1251,7 +1279,23 @@
 				>
 			</File>
 			<File
+				RelativePath="..\s\shard.cpp"
+				>
+			</File>
+			<File
+				RelativePath="..\s\shard.h"
+				>
+			</File>
+			<File
 				RelativePath="..\s\shardconnection.cpp"
+				>
+			</File>
+			<File
+				RelativePath="..\s\shardkey.cpp"
+				>
+			</File>
+			<File
+				RelativePath="..\s\shardkey.h"
 				>
 			</File>
 		</Filter>
@@ -1444,6 +1488,18 @@
 			</File>
 			<File
 				RelativePath="..\db\btreecursor.cpp"
+				>
+			</File>
+		</Filter>
+		<Filter
+			Name="bson"
+			>
+			<File
+				RelativePath="..\bson\bsonobj.h"
+				>
+			</File>
+			<File
+				RelativePath="..\bson\bsonobjbuilder.h"
 				>
 			</File>
 		</Filter>
