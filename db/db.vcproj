@@ -1137,6 +1137,10 @@
 					>
 				</File>
 				<File
+					RelativePath=".\index_geo2d.cpp"
+					>
+				</File>
+				<File
 					RelativePath=".\indexkey.cpp"
 					>
 				</File>
@@ -1198,10 +1202,6 @@
 				</File>
 				<File
 					RelativePath=".\pdfile.cpp"
-					>
-				</File>
-				<File
-					RelativePath=".\geo\quadrant_search.cpp"
 					>
 				</File>
 				<File
@@ -1285,6 +1285,10 @@
 					>
 				</File>
 				<File
+					RelativePath=".\dbinfo.h"
+					>
+				</File>
+				<File
 					RelativePath=".\dbmessage.h"
 					>
 				</File>
@@ -1313,6 +1317,10 @@
 					>
 				</File>
 				<File
+					RelativePath="..\grid\message.h"
+					>
+				</File>
+				<File
 					RelativePath=".\minilex.h"
 					>
 				</File>
@@ -1326,6 +1334,10 @@
 				</File>
 				<File
 					RelativePath=".\pdfile.h"
+					>
+				</File>
+				<File
+					RelativePath="..\grid\protocol.h"
 					>
 				</File>
 				<File
@@ -1394,6 +1406,10 @@
 				>
 			</File>
 			<File
+				RelativePath="..\util\builder.h"
+				>
+			</File>
+			<File
 				RelativePath="..\util\debug_util.h"
 				>
 			</File>
@@ -1422,7 +1438,15 @@
 				>
 			</File>
 			<File
+				RelativePath="..\util\interlocked.h"
+				>
+			</File>
+			<File
 				RelativePath=".\lasterror.h"
+				>
+			</File>
+			<File
+				RelativePath="..\util\rwlock.h"
 				>
 			</File>
 			<File
@@ -1439,6 +1463,10 @@
 			</File>
 			<File
 				RelativePath="..\util\mmap.h"
+				>
+			</File>
+			<File
+				RelativePath="..\util\mvar.h"
 				>
 			</File>
 			<File
@@ -1470,6 +1498,10 @@
 				>
 			</File>
 			<File
+				RelativePath="..\util\thread_pool.h"
+				>
+			</File>
+			<File
 				RelativePath="..\util\text.cpp"
 				>
 			</File>
@@ -1483,10 +1515,6 @@
 			</File>
 			<File
 				RelativePath="..\util\util.cpp"
-				>
-			</File>
-			<File
-				RelativePath="..\util\version.cpp"
 				>
 			</File>
 			<Filter
@@ -1639,14 +1667,6 @@
 				>
 			</File>
 			<File
-				RelativePath="..\s\d_state.cpp"
-				>
-			</File>
-			<File
-				RelativePath="..\s\d_writeback.cpp"
-				>
-			</File>
-			<File
 				RelativePath="..\s\shardconnection.cpp"
 				>
 			</File>
@@ -1787,11 +1807,15 @@
 				>
 			</File>
 			<File
-				RelativePath=".\repl\replset_commands.cpp"
+				RelativePath=".\repl\replset.cpp"
 				>
 			</File>
 			<File
-				RelativePath=".\repl\rs.cpp"
+				RelativePath=".\repl\replset.h"
+				>
+			</File>
+			<File
+				RelativePath=".\repl\replset_commands.cpp"
 				>
 			</File>
 			<File

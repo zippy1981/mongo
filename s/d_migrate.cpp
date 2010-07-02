@@ -114,6 +114,7 @@ namespace mongo {
 
 
 
+            Shard fromShard( from );
             Shard toShard( to );
             
             log() << "got movechunk: " << cmdObj << endl;
@@ -206,14 +207,21 @@ namespace mongo {
                         ++myVersion;
                         temp2.appendTimestamp( "lastmod" , myVersion );
                         
+                        shardingState.setVersion( ns , myVersion );
+
                         conn->update( ShardNS::chunk , x["_id"].wrap() , BSON( "$set" << temp2.obj() ) );
+                        
+                    }
+                    else {
+                        //++myVersion;
+                        shardingState.setVersion( ns , 0 );
                     }
                 }
 
                 conn.done();
-
+                
                 // 5.d
-                // TOOD
+                configServer.logChange( "moveChunk" , ns , BSON( "range" << filter << "from" << fromShard.getName() << "to" << toShard.getName() ) );
             }
             
             

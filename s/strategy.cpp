@@ -68,8 +68,10 @@ namespace mongo {
     
     void Strategy::insert( const Shard& shard , const char * ns , const BSONObj& obj ){
         ShardConnection dbcon( shard , ns );
-        if ( dbcon.setVersion() )
+        if ( dbcon.setVersion() ){
+            dbcon.done();
             throw StaleConfigException( ns , "for insert" );
+        }
         dbcon->insert( ns , obj );
         dbcon.done();
     }
@@ -124,6 +126,7 @@ namespace mongo {
                     
                     conn.done();
                     secsToSleep = 0;
+                    continue;
                 }
                 catch ( std::exception e ){
                     log() << "WriteBackListener exception : " << e.what() << endl;

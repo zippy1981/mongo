@@ -149,8 +149,10 @@ namespace mongo {
                         gotThrough = true;
                         break;
                     }
-                    catch ( StaleConfigException& se ){
-                        log(1) << "retrying insert because of StaleConfigException" << endl;
+                    catch ( StaleConfigException& ){
+                        log(1) << "retrying insert because of StaleConfigException: " << o << endl;
+                        r.reset();
+                        manager = r.getChunkManager();
                     }
                     sleepmillis( i * 200 );
                 }
