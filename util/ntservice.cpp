@@ -33,8 +33,25 @@ namespace mongo {
 	ServiceController::ServiceController() {
     }
     
-    bool ServiceController::installService( const std::wstring& serviceName, const std::wstring& displayName, const std::wstring& serviceDesc, const std::wstring& serviceUser, const std::wstring& servicePassword, int argc, char* argv[] ) {
+    bool ServiceController::installService( const std::wstring& serviceName, const std::wstring& displayName, const std::wstring& serviceDesc, const std::wstring& serviceUser, const std::wstring& servicePassword, const string dbpath, int argc, char* argv[] ) {
         assert(argc >= 1);
+
+        if ( !boost::filesystem::exists(dbpath) ) {
+            log() << "Directory " << dbpath << " does not exist. Creating." << endl;
+            try {
+                boost::filesystem::create_directory( dbpath );
+            }
+            catch (basic_filesystem_error<path>) {
+                log() << "Error creating directory. Service creation failed." << endl;
+                return false;
+            }
+        }
+	else if ( !boost::filesystem::is_directory(dbpath) ) {
+		log() << "'" << dbpath << "' Is not a directory." << endl;
+                return false;
+	} else {
+		log() << "Directory '" << dbpath << "' already exists." << endl;
+	}
 
         stringstream commandLine;
 
@@ -52,6 +69,10 @@ namespace mongo {
 			// replace install command to indicate process is being started as a service
 			if ( arg == "--install" || arg == "--reinstall" ) {
 				arg = "--service";
+			} else if ( arg == "--dbpath" && i + 1 < argc ) {
+				commandLine << arg << "  \"" << dbpath << "\"  ";
+				i++;
+				continue;
 			}
 			
 			// Strip off --service(Name|User|Password) arguments
@@ -63,10 +84,19 @@ namespace mongo {
 		
 		SC_HANDLE schSCManager = ::OpenSCManager( NULL, NULL, SC_MANAGER_ALL_ACCESS );
 		if ( schSCManager == NULL ) {
+			DWORD err = ::GetLastError();
+			LPTSTR errMsg;
+			::FormatMessage( FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM, NULL, err, 0, (LPTSTR)&errMsg, 0, NULL );
+			string errMsgStr = toUtf8String( errMsg );
+			::LocalFree( errMsg );
+			// FormatMessage() appends a newline to the end of error messages, we trim it because endl flushes the buffer.
+			errMsgStr = errMsgStr.erase( errMsgStr.length() - 2 );
+			log() << "Error connecting to the Service Control Manager: " << errMsgStr << endl;
+
 			return false;
 		}
 
-		// Make sure it exists first. TODO: Use GetLastError() to investigate why CreateService fails.
+		// Make sure the services doesn't already exist. 
 		// TODO: Check to see if service is in "Deleting" status, suggest the user close down Services MMC snap-ins.
 		SC_HANDLE schService = ::OpenService( schSCManager, serviceName.c_str(), SERVICE_ALL_ACCESS );
 		if ( schService != NULL ) {
@@ -85,6 +115,8 @@ namespace mongo {
 												SERVICE_ALL_ACCESS, SERVICE_WIN32_OWN_PROCESS,
 												SERVICE_AUTO_START, SERVICE_ERROR_NORMAL,
 												commandLineWide.str().c_str(), NULL, NULL, L"\0\0", NULL, NULL );
+
+		// TODO: Use GetLastError() to investigate why CreateService fails.
 		if ( schService == NULL ) {
 			log() << "Error creating service." << endl;
 			::CloseServiceHandle( schSCManager );

@@ -799,7 +799,12 @@ int main(int argc, char* argv[], char *envp[] )
             printGitVersion();
             return 0;
         }
+        #if defined(_WIN32)
+	// TODO: Might want to do this on unix platforms as well.
+        dbpath = system_complete( params["dbpath"].as<string>() ).string();
+        #else
         dbpath = params["dbpath"].as<string>();
+        #endif
         if ( params.count("directoryperdb")) {
             directoryperdb = true;
         }
@@ -974,7 +979,7 @@ int main(int argc, char* argv[], char *envp[] )
             enableIPv6();
         }
         
-#if defined(_WIN32)
+        #if defined(_WIN32)
         if (params.count("serviceName")){
             string x = params["serviceName"].as<string>();
             windowsServiceName = wstring(x.size(),L' ');
@@ -1045,7 +1050,7 @@ int main(int argc, char* argv[], char *envp[] )
             ServiceController::removeService( windowsServiceName );
 	}
 	if ( installService || reinstallService ) {
-            if ( !ServiceController::installService( windowsServiceName , L"Mongo DB", L"Mongo DB Server", windowsServiceUser, windowsServicePassword, argc, argv ) )
+            if ( !ServiceController::installService( windowsServiceName , L"Mongo DB", L"Mongo DB Server", windowsServiceUser, windowsServicePassword, dbpath, argc, argv ) )
                 dbexit( EXIT_NTSERVICE_ERROR );
             dbexit( EXIT_CLEAN );
         }
