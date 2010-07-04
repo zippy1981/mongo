@@ -22,7 +22,7 @@
 
 namespace mongo {
 
-	typedef bool ( *ServiceCallback )( void );
+    typedef bool ( *ServiceCallback )( void );
 
     class ServiceController {
     public:
@@ -35,12 +35,12 @@ namespace mongo {
         static bool reportStatus( DWORD reportState, DWORD waitHint = 0 );
         
         static void WINAPI initService( DWORD argc, LPTSTR *argv );
-		static void WINAPI serviceCtrl( DWORD ctrlCode );
+        static void WINAPI serviceCtrl( DWORD ctrlCode );
     
     protected:
-		static std::wstring _serviceName;
-		static SERVICE_STATUS_HANDLE _statusHandle;
-		static ServiceCallback _serviceCallback;
+        static std::wstring _serviceName;
+        static SERVICE_STATUS_HANDLE _statusHandle;
+        static ServiceCallback _serviceCallback;
     };
 
 } // namespace mongo

@@ -390,7 +390,7 @@ sendmore:
     }
     
     void repairDatabases() {
-		//        LastError * le = lastError.get( true );
+        //        LastError * le = lastError.get( true );
         Client::GodScope gs;
         log(1) << "enter repairDatabases" << endl;
         
@@ -609,13 +609,13 @@ sendmore:
         }
     }
 
-    #if defined(_WIN32)
+#if defined(_WIN32)
     bool initService() {
         ServiceController::reportStatus( SERVICE_RUNNING );
         initAndListen( cmdLine.port, appsrvPath );
         return true;
     }
-    #endif
+#endif
 
 } // namespace mongo
 
@@ -655,9 +655,9 @@ int main(int argc, char* argv[], char *envp[] )
     getcurns = ourgetns;
 
     po::options_description general_options("General options");
-	#if defined(_WIN32)
-	po::options_description windows_scm_options("Windows Service Control Manager options");
-	#endif
+#if defined(_WIN32)
+    po::options_description windows_scm_options("Windows Service Control Manager options");
+#endif
     po::options_description replication_options("Replication options");
     po::options_description sharding_options("Sharding options");
     po::options_description visible_options("Allowed options");
@@ -700,12 +700,12 @@ int main(int argc, char* argv[], char *envp[] )
         ("profile",po::value<int>(), "0=off 1=slow, 2=all")
         ("slowms",po::value<int>(&cmdLine.slowMS)->default_value(100), "value of slow for profile and console log" )
         ("maxConns",po::value<int>(), "max number of simultaneous connections")
-		#if !defined(_WIN32)
+#if !defined(_WIN32)
         ("nounixsocket", "disable listening on unix sockets")
-		#endif
+#endif
         ("ipv6", "enable IPv6 support (disabled by default)")
         ;
-	#if defined(_WIN32)
+#if defined(_WIN32)
     windows_scm_options.add_options()
         ("install", "install mongodb service")
         ("remove", "remove mongodb service")
@@ -714,10 +714,10 @@ int main(int argc, char* argv[], char *envp[] )
         ("serviceName", po::value<string>(), "windows service name")
         ("serviceUser", po::value<string>(), "user name service executes as")
         ("servicePassword", po::value<string>(), "password used to authenticate serviceUser")
-		;
-	#endif
+        ;
+#endif
 
-	replication_options.add_options()
+    replication_options.add_options()
         ("master", "master mode")
         ("slave", "slave mode")
         ("source", po::value<string>(), "when slave: specify master as <server:port>")
@@ -731,10 +731,10 @@ int main(int argc, char* argv[], char *envp[] )
         ("opIdMem", po::value<long>(), "size limit (in bytes) for in memory storage of op ids")
         ;
 
-	sharding_options.add_options()
-		("configsvr", "declare this is a config db of a cluster")
-		("shardsvr", "declare this is a shard db of a cluster")
-		;
+    sharding_options.add_options()
+        ("configsvr", "declare this is a config db of a cluster")
+        ("shardsvr", "declare this is a shard db of a cluster")
+        ;
 
     hidden_options.add_options()
         ("replSet", po::value<string>(), "specify repl set seed hostnames")
@@ -745,9 +745,9 @@ int main(int argc, char* argv[], char *envp[] )
 
     positional_options.add("command", 3);
     visible_options.add(general_options);
-	#if defined(_WIN32)
-	visible_options.add(windows_scm_options);
-	#endif
+#if defined(_WIN32)
+    visible_options.add(windows_scm_options);
+#endif
     visible_options.add(replication_options);
     visible_options.add(sharding_options);
     Module::addOptions( visible_options );
@@ -799,12 +799,12 @@ int main(int argc, char* argv[], char *envp[] )
             printGitVersion();
             return 0;
         }
-        #if defined(_WIN32)
-	// TODO: Might want to do this on unix platforms as well.
+#if defined(_WIN32)
+        // TODO: Might want to do this on unix platforms as well.
         dbpath = system_complete( params["dbpath"].as<string>() ).string();
-        #else
+#else
         dbpath = params["dbpath"].as<string>();
-        #endif
+#endif
         if ( params.count("directoryperdb")) {
             directoryperdb = true;
         }
@@ -953,13 +953,13 @@ int main(int argc, char* argv[], char *envp[] )
             log() << "--cacheSize option not currently supported" << endl;
             //setRecCacheSize(x);
         }
-		if (params.count("port") == 0 ) { 
-			if( params.count("configsvr") ) {
-				cmdLine.port = CmdLine::ConfigServerPort;
-			}
-			if( params.count("shardsvr") )
-				cmdLine.port = CmdLine::ShardServerPort;
-		}
+        if (params.count("port") == 0 ) { 
+            if( params.count("configsvr") ) {
+                cmdLine.port = CmdLine::ConfigServerPort;
+            }
+            if( params.count("shardsvr") )
+                cmdLine.port = CmdLine::ShardServerPort;
+        }
         if ( params.count("configsvr" ) && params.count( "diaglog" ) == 0 ){
             _diaglog.level = 1;
         }
@@ -979,29 +979,29 @@ int main(int argc, char* argv[], char *envp[] )
             enableIPv6();
         }
         
-        #if defined(_WIN32)
+#if defined(_WIN32)
         if (params.count("serviceName")){
             string x = params["serviceName"].as<string>();
             windowsServiceName = wstring(x.size(),L' ');
             for ( size_t i=0; i<x.size(); i++) {
                 windowsServiceName[i] = x[i];
-	    }
+            }
         }
         if (params.count("serviceUser")){
             string x = params["serviceUser"].as<string>();
             windowsServiceUser = wstring(x.size(),L' ');
             for ( size_t i=0; i<x.size(); i++) {
                 windowsServiceUser[i] = x[i];
-	    }
+            }
         }
         if (params.count("servicePassword")){
             string x = params["servicePassword"].as<string>();
             windowsServicePassword = wstring(x.size(),L' ');
             for ( size_t i=0; i<x.size(); i++) {
                 windowsServicePassword[i] = x[i];
-	    }
+            }
         }
-        #endif
+#endif
 
 
         Module::configAll( params );
@@ -1048,8 +1048,8 @@ int main(int argc, char* argv[], char *envp[] )
 #if defined(_WIN32)
         if ( reinstallService ) {
             ServiceController::removeService( windowsServiceName );
-	}
-	if ( installService || reinstallService ) {
+        }
+        if ( installService || reinstallService ) {
             if ( !ServiceController::installService( windowsServiceName , L"Mongo DB", L"Mongo DB Server", windowsServiceUser, windowsServicePassword, dbpath, argc, argv ) )
                 dbexit( EXIT_NTSERVICE_ERROR );
             dbexit( EXIT_CLEAN );
