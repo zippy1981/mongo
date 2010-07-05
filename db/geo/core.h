@@ -16,8 +16,16 @@
 *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+#pragma once
+
 #include "../../pch.h"
 #include "../jsobj.h"
+
+#include <cmath>
+
+#ifndef M_PI
+#  define M_PI 3.14159265358979323846
+#endif
 
 namespace mongo {
 
@@ -378,4 +386,31 @@ namespace mongo {
         double _x;
         double _y;
     };
+
+    // WARNING: _x and _y MUST be longitude and latitude in that order
+    inline double spheredist_rad( const Point& p1, const Point& p2 ) {
+        // this uses the n-vector formula: http://en.wikipedia.org/wiki/N-vector
+        // If you try to match the code to the formula, note that I inline the cross-product.
+        // TODO: optimize with SSE
+
+        double sin_x1(sin(p1._x)), cos_x1(cos(p1._x));
+        double sin_y1(sin(p1._y)), cos_y1(cos(p1._y));
+        double sin_x2(sin(p2._x)), cos_x2(cos(p2._x));
+        double sin_y2(sin(p2._y)), cos_y2(cos(p2._y));
+        
+        double cross_prod = 
+            (cos_y1*cos_x1 * cos_y2*cos_x2) +
+            (cos_y1*sin_x1 * cos_y2*sin_x2) +
+            (sin_y1        * sin_y2);
+
+        return acos(cross_prod);
+    }
+
+    // note: return is still in radians as that can be multiplied by radius to get arc length
+    inline double spheredist_deg( const Point& p1, const Point& p2 ) {
+        return spheredist_rad(
+                    Point( p1._x * (M_PI/180), p1._y * (M_PI/180)),
+                    Point( p2._x * (M_PI/180), p2._y * (M_PI/180))
+               );
+    }
 }
