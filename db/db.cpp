@@ -800,7 +800,12 @@ int main(int argc, char* argv[], char *envp[] )
             printGitVersion();
             return 0;
         }
+#if defined(_WIN32)
+        // TODO: Might want to do this on unix platforms as well.
+        dbpath = system_complete( params["dbpath"].as<string>() ).string();
+#else
         dbpath = params["dbpath"].as<string>();
+#endif
         if ( params.count("directoryperdb")) {
             directoryperdb = true;
         }
