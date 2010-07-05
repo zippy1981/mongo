@@ -33,7 +33,7 @@ namespace mongo {
 	ServiceController::ServiceController() {
     }
     
-    bool ServiceController::installService( const std::wstring& serviceName, const std::wstring& displayName, const std::wstring& serviceDesc, const std::wstring& serviceUser, const std::wstring& servicePassword, int argc, char* argv[] ) {
+    bool ServiceController::installService( const std::wstring& serviceName, const std::wstring& displayName, const std::wstring& serviceDesc, const std::wstring& serviceUser, const std::wstring& servicePassword, const string& dbpath, int argc, char* argv[] ) {
         assert(argc >= 1);
 
         stringstream commandLine;
@@ -77,6 +77,25 @@ namespace mongo {
 		}
 		std::basic_ostringstream< TCHAR > commandLineWide;
  		commandLineWide << commandLine.str().c_str();
+
+        if ( !boost::filesystem::exists(dbpath) ) {
+            log() << "Dbpath '" << dbpath << "' does not exist. Creating." << endl;
+            try {
+                boost::filesystem::create_directory( dbpath );
+            }
+            catch (basic_filesystem_error<path>) {
+                log() << "Error creating directory. Service creation failed." << endl;
+		::CloseServiceHandle( schSCManager );
+                return false;
+            }
+        }
+        else if ( !boost::filesystem::is_directory(dbpath) ) {
+            log() << "Specified dbpath '" << dbpath << "' is not a directory. Service creation aborted." << endl;
+            ::CloseServiceHandle( schSCManager );
+            return false;
+        } else {
+            log() << "Dbpath '" << dbpath << "' found." << endl;
+        }
 
 		log() << "Creating service " << toUtf8String(serviceName) << "." << endl;
 
