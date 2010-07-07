@@ -1005,11 +1005,15 @@
 				>
 			</File>
 			<File
-				RelativePath="..\client\syncclusterconnection.cpp"
+				RelativePath="..\util\stringutils.cpp"
 				>
 			</File>
 			<File
-				RelativePath="..\util\thread_pool.cpp"
+				RelativePath="..\util\stringutils.h"
+				>
+			</File>
+			<File
+				RelativePath="..\client\syncclusterconnection.cpp"
 				>
 			</File>
 			<File
@@ -1018,6 +1022,18 @@
 			</File>
 			<File
 				RelativePath="..\util\util.cpp"
+				>
+			</File>
+			<File
+				RelativePath="..\util\concurrency\vars.cpp"
+				>
+			</File>
+			<File
+				RelativePath="..\util\version.cpp"
+				>
+			</File>
+			<File
+				RelativePath="..\util\version.h"
 				>
 			</File>
 		</Filter>

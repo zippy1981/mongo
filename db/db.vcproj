@@ -1024,6 +1024,10 @@
 				>
 			</File>
 			<File
+				RelativePath="..\client\model.cpp"
+				>
+			</File>
+			<File
 				RelativePath="..\client\model.h"
 				>
 			</File>
@@ -1134,10 +1138,6 @@
 				</File>
 				<File
 					RelativePath=".\index.cpp"
-					>
-				</File>
-				<File
-					RelativePath=".\index_geo2d.cpp"
 					>
 				</File>
 				<File
@@ -1446,10 +1446,6 @@
 				>
 			</File>
 			<File
-				RelativePath="..\util\rwlock.h"
-				>
-			</File>
-			<File
 				RelativePath="..\util\log.h"
 				>
 			</File>
@@ -1498,7 +1494,15 @@
 				>
 			</File>
 			<File
-				RelativePath="..\util\thread_pool.h"
+				RelativePath="..\util\rwlock.h"
+				>
+			</File>
+			<File
+				RelativePath="..\util\stringutils.cpp"
+				>
+			</File>
+			<File
+				RelativePath="..\util\stringutils.h"
 				>
 			</File>
 			<File
@@ -1510,11 +1514,19 @@
 				>
 			</File>
 			<File
+				RelativePath="..\util\thread_pool.h"
+				>
+			</File>
+			<File
 				RelativePath="..\util\unittest.h"
 				>
 			</File>
 			<File
 				RelativePath="..\util\util.cpp"
+				>
+			</File>
+			<File
+				RelativePath="..\util\version.cpp"
 				>
 			</File>
 			<Filter
@@ -1534,6 +1546,14 @@
 				</File>
 				<File
 					RelativePath="..\util\concurrency\task.h"
+					>
+				</File>
+				<File
+					RelativePath="..\util\concurrency\thread_pool.cpp"
+					>
+				</File>
+				<File
+					RelativePath="..\util\concurrency\thread_pool.h"
 					>
 				</File>
 				<File
@@ -1663,11 +1683,47 @@
 			Name="shard"
 			>
 			<File
+				RelativePath="..\s\chunk.cpp"
+				>
+			</File>
+			<File
+				RelativePath="..\s\chunk.h"
+				>
+			</File>
+			<File
+				RelativePath="..\s\config.cpp"
+				>
+			</File>
+			<File
+				RelativePath="..\s\config.h"
+				>
+			</File>
+			<File
 				RelativePath="..\s\d_logic.cpp"
 				>
 			</File>
 			<File
+				RelativePath="..\s\d_writeback.cpp"
+				>
+			</File>
+			<File
+				RelativePath="..\s\shard.cpp"
+				>
+			</File>
+			<File
+				RelativePath="..\s\shard.h"
+				>
+			</File>
+			<File
 				RelativePath="..\s\shardconnection.cpp"
+				>
+			</File>
+			<File
+				RelativePath="..\s\shardkey.cpp"
+				>
+			</File>
+			<File
+				RelativePath="..\s\shardkey.h"
 				>
 			</File>
 		</Filter>
@@ -1787,6 +1843,10 @@
 				>
 			</File>
 			<File
+				RelativePath="..\s\d_state.cpp"
+				>
+			</File>
+			<File
 				RelativePath=".\repl\health.cpp"
 				>
 			</File>
@@ -1807,15 +1867,19 @@
 				>
 			</File>
 			<File
-				RelativePath=".\repl\replset.cpp"
-				>
-			</File>
-			<File
 				RelativePath=".\repl\replset.h"
 				>
 			</File>
 			<File
 				RelativePath=".\repl\replset_commands.cpp"
+				>
+			</File>
+			<File
+				RelativePath=".\repl\rs.cpp"
+				>
+			</File>
+			<File
+				RelativePath=".\repl\rs.h"
 				>
 			</File>
 			<File
