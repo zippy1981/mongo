@@ -47,6 +47,7 @@ namespace mongo {
             commandLine << '"' << buffer << '\\' << argv[0] << "\" ";
         }
         
+<<<<<<< HEAD
         for ( int i = 1; i < argc; i++ ) {
             std::string arg( argv[ i ] );
             // replace install command to indicate process is being started as a service
@@ -61,6 +62,28 @@ namespace mongo {
                 continue;
             }
             commandLine << arg << "  ";
+=======
+		for ( int i = 1; i < argc; i++ ) {
+			std::string arg( argv[ i ] );
+			
+			// replace install command to indicate process is being started as a service
+			if ( arg == "--install" || arg == "--reinstall" ) {
+				arg = "--service";
+			}
+			
+			// Strip off --service(Name|User|Password) arguments
+			if ( arg.length() > 9 && arg.substr(0, 9) == "--service" ) {
+				continue;
+			}
+			commandLine << arg << "  ";
+		}
+		
+        SC_HANDLE schSCManager = ::OpenSCManager( NULL, NULL, SC_MANAGER_ALL_ACCESS );
+        if ( schSCManager == NULL ) {
+            DWORD err = ::GetLastError();
+            log() << "Error connecting to the Service Control Manager: " << GetWinErrMsg(err) << endl;
+            return false;
+>>>>>>> e63f90f9826898874ef911eac45bc6c32e8abbb8
         }
 
         SC_HANDLE schSCManager = ::OpenSCManager( NULL, NULL, SC_MANAGER_ALL_ACCESS );

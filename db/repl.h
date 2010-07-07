@@ -32,12 +32,10 @@
 #include "dbhelpers.h"
 #include "query.h"
 #include "queryoptimizer.h"
-
 #include "../client/dbclient.h"
-
 #include "../util/optime.h"
-
 #include "oplog.h"
+#include "../util/concurrency/thread_pool.h"
 
 namespace mongo {
 
@@ -87,6 +85,7 @@ namespace mongo {
         auto_ptr<DBClientConnection> _conn;
         auto_ptr<DBClientCursor> cursor;
     public:
+
         void reset() {
             cursor.reset();
         }
@@ -130,6 +129,11 @@ namespace mongo {
             return cursor->hasResultFlag(QueryResult::ResultFlag_AwaitCapable);
         }
 
+        void peek(vector<BSONObj>& v, int n) { 
+            if( cursor.get() )
+                cursor->peek(v,n);
+        }
+
         BSONObj next() { 
             return cursor->next();
         }
@@ -150,6 +154,8 @@ namespace mongo {
        not done (always use main for now).
     */
     class ReplSource {
+        auto_ptr<ThreadPool> tp;
+
         bool resync(string db);
 
         /* pull some operations from the master's oplog, and apply them. */

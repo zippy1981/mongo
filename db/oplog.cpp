@@ -39,7 +39,6 @@ namespace mongo {
     }
 
     static void _logOpUninitialized(const char *opstr, const char *ns, const char *logNS, const BSONObj& obj, BSONObj *o2, bool *bb ) {
-        log() << "replSet logop not done" << endl;
         uassert(13288, "replSet error write op to db before replSet initialized", str::startsWith(ns, "local.") || *opstr == 'n');
     }
 
@@ -216,8 +215,14 @@ namespace mongo {
     }
 
     static void (*_logOp)(const char *opstr, const char *ns, const char *logNS, const BSONObj& obj, BSONObj *o2, bool *bb ) = _logOpOld;
-    void newReplUp() { _logOp = _logOpRS; }
-    void newRepl() { _logOp = _logOpUninitialized; }
+    void newReplUp() { 
+        replSettings.master = true;
+        _logOp = _logOpRS; 
+    }
+    void newRepl() { 
+        replSettings.master = true;
+        _logOp = _logOpUninitialized; 
+    }
     void oldRepl() { _logOp = _logOpOld; }
 
     void logKeepalive() { 
@@ -312,7 +317,7 @@ namespace mongo {
             }
         }
 
-        log() << "******\n";
+        log() << "******" << endl;
         log() << "creating replication oplog of size: " << (int)( sz / ( 1024 * 1024 ) ) << "MB... (use --oplogSize to change)" << endl;
 
         b.append("size", sz);
@@ -398,7 +403,51 @@ namespace mongo {
         }
     } testoptime;
 
+    int _dummy_z;
+
+    void pretouchN(vector<BSONObj>& v, unsigned a, unsigned b) {
+        DEV assert( !dbMutex.isWriteLocked() );
+
+        Client *c = &cc();
+        if( c == 0 ) { 
+            Client::initThread("pretouchN");
+            c = &cc();
+        }
+
+        readlock lk("");
+        for( unsigned i = a; i <= b; i++ ) {
+            const BSONObj& op = v[i];
+            const char *which = "o";
+            const char *opType = op.getStringField("op");
+            if ( *opType == 'i' )
+                ;
+            else if( *opType == 'u' )
+                which = "o2";
+            else
+                continue;
+            /* todo : other operations */
+
+            try { 
+                BSONObj o = op.getObjectField(which);
+                BSONElement _id;
+                if( o.getObjectID(_id) ) {
+                    const char *ns = op.getStringField("ns");
+                    BSONObjBuilder b;
+                    b.append(_id);
+                    BSONObj result;
+                    Client::Context ctx( ns );
+                    if( Helpers::findById(cc(), ns, b.done(), result) )
+                        _dummy_z += result.objsize(); // touch
+                }
+            }
+            catch( DBException& ) { 
+                log() << "ignoring assertion in pretouchN()" << endl;
+            }
+        }
+    }
+
     void pretouchOperation(const BSONObj& op) {
+
         if( dbMutex.isWriteLocked() )
             return; // no point pretouching if write locked. not sure if this will ever fire, but just in case.
 
@@ -422,7 +471,8 @@ namespace mongo {
                 BSONObj result;
                 readlock lk(ns);
                 Client::Context ctx( ns );
-                Helpers::findById(cc(), ns, b.done(), result);
+                if( Helpers::findById(cc(), ns, b.done(), result) )
+                    _dummy_z += result.objsize(); // touch
             }
         }
         catch( DBException& ) { 

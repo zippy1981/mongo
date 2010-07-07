@@ -1494,6 +1494,14 @@
 				>
 			</File>
 			<File
+				RelativePath="..\util\stringutils.cpp"
+				>
+			</File>
+			<File
+				RelativePath="..\util\stringutils.h"
+				>
+			</File>
+			<File
 				RelativePath="..\util\text.cpp"
 				>
 			</File>
@@ -1519,6 +1527,10 @@
 			</File>
 			<File
 				RelativePath="..\util\version.h"
+				>
+			</File>
+			<File
+				RelativePath="..\util\winutil.h"
 				>
 			</File>
 			<Filter
