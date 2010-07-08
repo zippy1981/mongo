@@ -310,13 +310,13 @@ namespace mongo {
         topSize = 0;
         int i = 0;
         for ( int j = 0; j < n; j++ ) {
-            if( j > 0 && k( j ).isUnused() && k( j ).prevChildBucket.isNull() ) {
-                if ( i < refPos ) {
-                    --refPos;
-                }
+            if( j > 0 && ( j != refPos ) && k( j ).isUnused() && k( j ).prevChildBucket.isNull() ) {
                 continue; // key is unused and has no children - drop it
             }
             if( i != j ) {
+                if ( refPos == j ) {
+                    refPos = i; // i < j so j will never be refPos again
+                }
                 k( i ) = k( j );
             }
             short ofsold = k(i).keyDataOfs();
@@ -326,6 +326,9 @@ namespace mongo {
             memcpy(temp+ofs, dataAt(ofsold), sz);
             k(i).setKeyDataOfsSavingUse( ofs );
             ++i;
+        }
+        if ( refPos == n ) {
+            refPos = i;
         }
         n = i;
         int dataUsed = tdz - ofs;
