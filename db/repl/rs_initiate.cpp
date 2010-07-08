@@ -54,17 +54,22 @@ namespace mongo {
                         uasserted(13259, ss.str());
                     }
                 }
-                catch(...) { }
+                catch(DBException& e) { 
+                    log() << "replSet requestHeartbeat " << i->h.toString() << " : " << e.toString() << rsLog;
+                }
+                catch(...) { 
+                    log() << "replSet error exception in requestHeartbeat?" << rsLog;
+                }
+                if( res.getBoolField("mismatch") )
+                    uasserted(13145, "set name does not match the set name host " + i->h.toString() + " expects");
+                if( *res.getStringField("set") )
+                    uasserted(13256, "member " + i->h.toString() + " is already initiated");
                 if( !ok && !res["rs"].trueValue() ) {
                     if( !res.isEmpty() )
                         log() << "replSet warning " << i->h.toString() << " replied: " << res.toString() << rsLog;
                     uasserted(13144, "need all members up to initiate, not ok: " + i->h.toString());
                 }
             }
-            if( res.getBoolField("mismatch") )
-                uasserted(13145, "set names do not match with: " + i->h.toString());
-            if( *res.getStringField("set") )
-                uasserted(13256, "member " + i->h.toString() + " is already initiated");
             bool hasData = res["hasData"].Bool();
             uassert(13311, "member " + i->h.toString() + " has data already, cannot initiate set.  All members except initiator must be empty.", 
                 !hasData || i->h.isSelf());
@@ -73,7 +78,7 @@ namespace mongo {
 
     class CmdReplSetInitiate : public ReplSetCommand { 
     public:
-        virtual LockType locktype() const { return WRITE; }
+        virtual LockType locktype() const { return NONE; }
         CmdReplSetInitiate() : ReplSetCommand("replSetInitiate") { }
         virtual void help(stringstream& h) const { 
             h << "Initiate/christen a replica set."; 
@@ -140,18 +145,18 @@ namespace mongo {
 
                 log() << "replSet replSetInitiate all members seem up" << rsLog;
 
+                writelock lk("");
                 bo comment = BSON( "msg" << "initiating set");
                 newConfig.saveConfigLocally(comment);
+                log() << "replSet replSetInitiate config now saved locally.  Should come online in about a minute." << rsLog;
+                result.append("info", "Config now saved locally.  Should come online in about a minute.");
+                ReplSet::startupStatus = ReplSet::SOON;
+                ReplSet::startupStatusMsg = "Received replSetInitiate - should come online shortly.";
             }
             catch( DBException& e ) { 
                 log() << "replSet replSetInitiate exception: " << e.what() << rsLog;
                 throw;
             }
-
-            log() << "replSet replSetInitiate config now saved locally.  Should come online in about a minute." << rsLog;
-            result.append("info", "Config now saved locally.  Should come online in about a minute.");
-            ReplSet::startupStatus = ReplSet::SOON;
-            ReplSet::startupStatusMsg = "Received replSetInitiate - should come online shortly.";
 
             return true;
         }
