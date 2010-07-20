@@ -151,7 +151,8 @@ namespace mongo {
 
             BackgroundOperation::dump(ss);
 
-            ss << "<h3>Log</h3>\n";
+            ss << "</pre><h4>Log:</h4>";
+
             ramlog->toHTML( ss );
         }
 
@@ -160,7 +161,7 @@ namespace mongo {
             ss << usage.count;
             ss << "</td><td>";
             double per = 100 * ((double)usage.time)/elapsed;
-            ss << setprecision(2) << fixed << per << "%";
+            ss << setprecision(4) << fixed << per << "%";
             ss << "</td>";
         }
 
@@ -215,14 +216,14 @@ namespace mongo {
 
             ss << "\n<table border=1 cellpadding=2 cellspacing=0>";
             ss << "<tr align='left'>"
-               << "<th>Client</th>" 
-               << "<th>OpId</th>" 
+               << th( a("", "Connections to the database, both internal and external.", "Client") )
+               << th( a("http://www.mongodb.org/display/DOCS/Viewing+and+Terminating+Current+Operation", "", "OpId") )
                << "<th>Active</th>" 
                << "<th>LockType</th>"
                << "<th>Waiting</th>"
                << "<th>SecsRunning</th>"
                << "<th>Op</th>"
-               << "<th>NameSpace</th>"
+               << th( a("http://www.mongodb.org/display/DOCS/Developer+FAQ#DeveloperFAQ-What%27sa%22namespace%22%3F", "", "Namespace") )
                << "<th>Query</th>"
                << "<th>client</th>"
                << "<th>msg</th>"
@@ -584,7 +585,7 @@ namespace mongo {
                 BSONObj co;
                 {
                     BSONObjBuilder b;
-                    b.append( cmd.c_str() , 1 );
+                    b.append( cmd , 1 );
                     
                     if ( cmd == "serverStatus" && params["repl"].type() ){
                         b.append( "repl" , atoi( params["repl"].valuestr() ) );
@@ -597,9 +598,9 @@ namespace mongo {
                 
                 BSONObjBuilder sub;
                 if ( ! c->run( "admin.$cmd" , co , errmsg , sub , false ) )
-                    buf.append( cmd.c_str() , errmsg );
+                    buf.append( cmd , errmsg );
                 else
-                    buf.append( cmd.c_str() , sub.obj() );
+                    buf.append( cmd , sub.obj() );
             }
             
             responseMsg = buf.obj().jsonString();
@@ -706,9 +707,9 @@ namespace mongo {
                 // TODO: this is how i guess if something is a number.  pretty lame right now
                 double number = strtod( val , &temp );
                 if ( temp != val )
-                    queryBuilder.append( field.c_str() , number );
+                    queryBuilder.append( field , number );
                 else
-                    queryBuilder.append( field.c_str() , val );
+                    queryBuilder.append( field , val );
             }
 
             BSONObj query = queryBuilder.obj();

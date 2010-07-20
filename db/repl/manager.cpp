@@ -33,7 +33,7 @@ namespace mongo {
         Member *m = rs->head();
         Member *p = 0;
         while( m ) {
-            if( m->state() == PRIMARY ) {
+            if( m->state() == RS_PRIMARY && m->hbinfo().up() ) {
                 if( p ) throw "twomasters"; // our polling is asynchronous, so this is often ok.
                 p = m;
             }
@@ -54,9 +54,14 @@ namespace mongo {
     }
 
     void Manager::noteARemoteIsPrimary(const Member *m) { 
+        if( rs->currentPrimary() == m )
+            return;
         rs->_currentPrimary = m;
         rs->_self->lhb() = "";
-        rs->_myState = RECOVERING;
+        if( rs->iAmArbiterOnly() )
+            rs->changeState(RS_ARBITER);
+        else
+            rs->changeState(RS_RECOVERING);
     }
 
     /** called as the health threads get new results */
@@ -67,6 +72,11 @@ namespace mongo {
             if( busyWithElectSelf ) return;
 
             const Member *p = rs->currentPrimary();
+            if( p && !p->hbinfo().up() ) {
+                assert( p != rs->_self );
+                p = rs->_currentPrimary = 0;
+            }
+
             const Member *p2;
             try { p2 = findOtherPrimary(); }
             catch(string s) { 
@@ -75,22 +85,36 @@ namespace mongo {
                 return;
             }
 
-            if( p == p2 && p ) return;
+            if( p == p2 && p ) {
+                return;
+            }
 
-            if( p2 ) { 
+            if( p2 ) {
                 /* someone else thinks they are primary. */
-                if( p == p2 ) // already match
+                if( p == p2 ) { // already match 
                     return;
-                if( p == 0 )
-                    noteARemoteIsPrimary(p2); return;
-                if( p != rs->_self )
-                    noteARemoteIsPrimary(p2); return;
+                }
+                if( p == 0 ) {
+                    noteARemoteIsPrimary(p2); 
+                    return;
+                }
+                if( p != rs->_self ) {
+                    noteARemoteIsPrimary(p2); 
+                    return;
+                }
                 /* we thought we were primary, yet now someone else thinks they are. */
-                if( !rs->elect.aMajoritySeemsToBeUp() )
-                    noteARemoteIsPrimary(p2); return;
+                if( !rs->elect.aMajoritySeemsToBeUp() ) {
+                    noteARemoteIsPrimary(p2); 
+                    return;
+                }
                 /* ignore for now, keep thinking we are master */
                 return;
             }
+
+            if( !rs->iAmPotentiallyHot() ) // if not we never try to be primary
+                return;
+
+            /* TODO : CHECK PRIORITY HERE.  can't be elected if priority zero. */
 
             if( p ) { 
                 /* we are already primary, and nothing significant out there has changed. */

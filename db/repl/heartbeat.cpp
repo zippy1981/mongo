@@ -54,8 +54,8 @@ namespace mongo {
             string s = string(cmdObj.getStringField("replSetHeartbeat"))+'/';
             if( !startsWith(cmdLine.replSet, s ) ) {
                 errmsg = "repl set names do not match";
-                cout << "cmdline: " << cmdLine.replSet << endl;
-                cout << "s: " << s << endl;
+                log() << "cmdline: " << cmdLine.replSet << endl;
+                log() << "s: " << s << endl;
                 result.append("mismatch", true);
                 return false;
             }
@@ -111,10 +111,10 @@ namespace mongo {
 
         string name() { return "ReplSetHealthPollTask"; }
         void doWork() { 
-            cout << "TEMP healthpool dowork " << endl;
+            //cout << "TEMP healthpool dowork " << endl;
 
             if ( !theReplSet ) {
-                log() << "theReplSet not initialized yet, skipping health poll this round" << endl;
+                log() << "theReplSet not initialized yet, skipping health poll this round" << rsLog;
                 return;
             }
 
@@ -156,7 +156,7 @@ namespace mongo {
                 down(mem, "connect/transport error");             
             }
             m = mem;
-            cout << "TEMP sending msgupdatehbinfo" << mem.hbstate << endl;
+            //cout << "TEMP sending msgupdatehbinfo" << mem.hbstate << endl;
             theReplSet->mgr->send( boost::bind(&ReplSet::msgUpdateHBInfo, theReplSet, mem) );
 
             static time_t last = 0;
@@ -172,25 +172,29 @@ namespace mongo {
             mem.health = 0.0;
             if( mem.upSince ) {
                 mem.upSince = 0;
-                log() << "replSet info " << h.toString() << " is now down" << rsLog;
+                log() << "replSet info " << h.toString() << " is now down (or slow to respond)" << rsLog;
             }
             mem.lastHeartbeatMsg = msg;
         }
     };
 
     void ReplSetImpl::endOldHealthTasks() { 
+        unsigned sz = healthTasks.size();
         for( set<ReplSetHealthPollTask*>::iterator i = healthTasks.begin(); i != healthTasks.end(); i++ )
             (*i)->halt();
         healthTasks.clear();
-        cout << "cleared old tasks " << healthTasks.size() << endl;
+        if( sz ) 
+            DEV log() << "replSet debug: cleared old tasks " << sz << endl;
     }
 
     void ReplSetImpl::startHealthTaskFor(Member *m) {
         ReplSetHealthPollTask *task = new ReplSetHealthPollTask(m->h(), m->hbinfo());
-        cout << "TEMP starting healthtask thread " << m->h().toString() << endl;
+        //DEV log() << "TEMP starting healthtask thread " << m->h().toString() << endl;
         healthTasks.insert(task);
         task::repeat(shared_ptr<task::Task>(task), 2000);
     }
+
+    void startSyncThread();
 
     /** called during repl set startup.  caller expects it to return fairly quickly. 
         note ReplSet object is only created once we get a config - so this won't run 
@@ -209,6 +213,8 @@ namespace mongo {
         }*/
 
         mgr->send( boost::bind(&Manager::msgCheckNewState, theReplSet->mgr) );
+
+        boost::thread t(startSyncThread);
     }
 
 }

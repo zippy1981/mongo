@@ -59,7 +59,7 @@ namespace mongo {
     }
     
     /*static*/ 
-    void ReplSetConfig::receivedNewConfig(BSONObj cfg) { 
+    /*void ReplSetConfig::receivedNewConfig(BSONObj cfg) { 
         if( theReplSet )
             return; // this is for initial setup only, so far. todo
 
@@ -69,7 +69,7 @@ namespace mongo {
         if( theReplSet ) 
             return;
         c.saveConfigLocally(bo());
-    }
+    }*/
 
     bo ReplSetConfig::MemberCfg::asBson() const { 
         bob b;
@@ -184,13 +184,19 @@ namespace mongo {
             try {
                 try { 
                     m._id = (int) mobj["_id"].Number();
-                } catch(...) { throw "_id must be numeric"; }
+                } catch(...) { 
+                    /* TODO: use of string exceptions may be problematic for reconfig case! */
+                    throw "_id must be numeric"; 
+                }
                 string s;
                 try {
                     s = mobj["host"].String();
                     m.h = HostAndPort(s);
                 }
-                catch(...) { throw "bad or missing host field?"; }
+                catch(...) { 
+                    throw "bad or missing host field?"; 
+                }
+                uassert(13393, "can't use localhost in member names", !m.h.isLocalHost());
                 m.arbiterOnly = mobj.getBoolField("arbiterOnly");
                 if( mobj.hasElement("priority") )
                     m.priority = mobj["priority"].Number();
@@ -294,7 +300,7 @@ namespace mongo {
         uassert(13109, "multiple rows in " + rsConfigNs + " not supported", !c->more());
         from(o);
         _ok = true;
-        log(level) << "replSet load config ok from " << h.toString() << rsLog;
+        log(level) << "replSet load config ok from " << (h.isSelf() ? "self" : h.toString()) << rsLog;
     }
 
 }

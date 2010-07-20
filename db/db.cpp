@@ -269,14 +269,14 @@ sendmore:
                             string ns = dbresponse.exhaust; // before reset() free's it...
                             m.reset();
                             BufBuilder b(512);
-                            b.append((int) 0 /*size set later in appendData()*/);
-                            b.append(header->id);
-                            b.append(header->responseTo);
-                            b.append((int) dbGetMore);
-                            b.append((int) 0);
-                            b.append(ns);
-                            b.append((int) 0); // ntoreturn
-                            b.append(cursorid);
+                            b.appendNum((int) 0 /*size set later in appendData()*/);
+                            b.appendNum(header->id);
+                            b.appendNum(header->responseTo);
+                            b.appendNum((int) dbGetMore);
+                            b.appendNum((int) 0);
+                            b.appendStr(ns);
+                            b.appendNum((int) 0); // ntoreturn
+                            b.appendNum(cursorid);
                             m.appendData(b.buf(), b.len());
                             b.decouple();
                             DEV log() << "exhaust=true sending more" << endl;
@@ -738,6 +738,7 @@ int main(int argc, char* argv[], char *envp[] )
 	sharding_options.add_options()
 		("configsvr", "declare this is a config db of a cluster")
 		("shardsvr", "declare this is a shard db of a cluster")
+        ("noMoveParanoia" , "turn off paranoid saving of data for moveChunk.  this is on by default for now, but default will switch" )
 		;
 
     hidden_options.add_options()
@@ -969,6 +970,10 @@ int main(int argc, char* argv[], char *envp[] )
 			if( params.count("shardsvr") )
 				cmdLine.port = CmdLine::ShardServerPort;
 		}
+        else { 
+            uassert( 13392, "bad --port number", cmdLine.port > 0 );
+            uassert( 13391, "bad --port number", cmdLine.port <= 65535 || params.count("ipv6") );
+        }
         if ( params.count("configsvr" ) && params.count( "diaglog" ) == 0 ){
             _diaglog.level = 1;
         }
@@ -987,7 +992,9 @@ int main(int argc, char* argv[], char *envp[] )
         if (params.count("ipv6")){
             enableIPv6();
         }
-        
+        if (params.count("noMoveParanoia")){
+            cmdLine.moveParanoia = false;
+        }
 #if defined(_WIN32)
         if (params.count("serviceName")){
             string x = params["serviceName"].as<string>();

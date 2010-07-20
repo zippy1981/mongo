@@ -23,7 +23,7 @@
 
 namespace mongo { 
 
-    void checkAllMembersUpForConfigChange(const ReplSetConfig& cfg);
+    void checkAllMembersUpForConfigChange(const ReplSetConfig& cfg, bool initial);
 
     /* commands in other files:
          replSetHeartbeat - health.cpp
@@ -95,11 +95,11 @@ namespace mongo {
                     return false;
                 }
 
-                checkAllMembersUpForConfigChange(newConfig);
+                checkAllMembersUpForConfigChange(newConfig,false);
 
                 log() << "replSet replSetReconfig all members seem up" << rsLog;
 
-                theReplSet->haveNewConfig(newConfig);
+                theReplSet->haveNewConfig(newConfig, true);
                 ReplSet::startupStatusMsg = "replSetReconfig'd";
             }
             catch( DBException& e ) { 

@@ -414,7 +414,7 @@ coreServerFiles = [ "util/message_server_port.cpp" ,
 if GetOption( "asio" ) != None:
     coreServerFiles += [ "util/message_server_asio.cpp" ]
 
-serverOnlyFiles = Split( "db/query.cpp db/update.cpp db/introspect.cpp db/btree.cpp db/clientcursor.cpp db/tests.cpp db/repl.cpp db/repl/rs.cpp db/repl/consensus.cpp db/repl/rs_initiate.cpp db/repl/replset_commands.cpp db/repl/manager.cpp db/repl/health.cpp db/repl/heartbeat.cpp db/repl/rs_config.cpp db/repl/rs_sync.cpp db/oplog.cpp db/repl_block.cpp db/btreecursor.cpp db/cloner.cpp db/namespace.cpp db/matcher_covered.cpp db/dbeval.cpp db/dbwebserver.cpp db/dbhelpers.cpp db/instance.cpp db/client.cpp db/database.cpp db/pdfile.cpp db/cursor.cpp db/security_commands.cpp db/security.cpp util/miniwebserver.cpp db/storage.cpp db/queryoptimizer.cpp db/extsort.cpp db/mr.cpp s/d_util.cpp db/cmdline.cpp" )
+serverOnlyFiles = Split( "db/query.cpp db/update.cpp db/introspect.cpp db/btree.cpp db/clientcursor.cpp db/tests.cpp db/repl.cpp db/repl/rs.cpp db/repl/consensus.cpp db/repl/rs_initiate.cpp db/repl/replset_commands.cpp db/repl/manager.cpp db/repl/health.cpp db/repl/heartbeat.cpp db/repl/rs_config.cpp db/repl/rs_sync.cpp db/repl/rs_initialsync.cpp db/oplog.cpp db/repl_block.cpp db/btreecursor.cpp db/cloner.cpp db/namespace.cpp db/matcher_covered.cpp db/dbeval.cpp db/dbwebserver.cpp db/dbhelpers.cpp db/instance.cpp db/client.cpp db/database.cpp db/pdfile.cpp db/cursor.cpp db/security_commands.cpp db/security.cpp util/miniwebserver.cpp db/storage.cpp db/queryoptimizer.cpp db/extsort.cpp db/mr.cpp s/d_util.cpp db/cmdline.cpp" )
 
 serverOnlyFiles += [ "db/index.cpp" ] + Glob( "db/geo/*.cpp" )
 
@@ -772,46 +772,6 @@ except OSError:
 
 # --- check system ---
 
-def getGitBranch():
-    if not os.path.exists( ".git" ):
-        return None
-    
-    version = open( ".git/HEAD" ,'r' ).read().strip()
-    if not version.startswith( "ref: " ):
-        return version
-    version = version.split( "/" )
-    version = version[len(version)-1]
-    return version
-
-def getGitBranchString( prefix="" , postfix="" ):
-    t = re.compile( '[/\\\]' ).split( os.getcwd() )
-    if len(t) > 2 and t[len(t)-1] == "mongo":
-        par = t[len(t)-2]
-        m = re.compile( ".*_([vV]\d+\.\d+)$" ).match( par )
-        if m is not None:
-            return prefix + m.group(1).lower() + postfix
-        if par.find("Nightly") > 0:
-            return ""
-
-
-    b = getGitBranch()
-    if b == None or b == "master":
-        return ""
-    return prefix + b + postfix
-
-def getGitVersion():
-    if not os.path.exists( ".git" ):
-        return "nogitversion"
-
-    version = open( ".git/HEAD" ,'r' ).read().strip()
-    if not version.startswith( "ref: " ):
-        return version
-    version = version[5:]
-    f = ".git/" + version
-    if not os.path.exists( f ):
-        return version
-    return open( f , 'r' ).read().strip()
-
 def getSysInfo():
     if windows:
         return "windows " + str( sys.getwindowsversion() )
@@ -824,7 +784,7 @@ def add_exe(target):
     return target
 
 def setupBuildInfoFile( outFile ):
-    version = getGitVersion()
+    version = utils.getGitVersion()
     if len(moduleNames) > 0:
         version = version + " modules: " + ','.join( moduleNames )
     sysInfo = getSysInfo()
@@ -1387,7 +1347,7 @@ def recordPerformance( env, target, source ):
         sub = { "benchmark": { "project": "http://github.com/mongodb/mongo", "description": "" }, "trial": {} }
         sub[ "benchmark" ][ "name" ] = name
         sub[ "benchmark" ][ "tags" ] = [ "c++", re.match( "(.*)__", name ).group( 1 ) ]
-        sub[ "trial" ][ "server_hash" ] = getGitVersion()
+        sub[ "trial" ][ "server_hash" ] = utils.getGitVersion()
         sub[ "trial" ][ "client_hash" ] = ""
         sub[ "trial" ][ "result" ] = val
         try:
@@ -1468,7 +1428,7 @@ def getDistName( sofar ):
             return version
 
 
-    return getGitBranchString( "" , "-" ) + today.strftime( "%Y-%m-%d" )
+    return utils.getGitBranchString( "" , "-" ) + today.strftime( "%Y-%m-%d" )
 
 
 if distBuild:
@@ -1600,7 +1560,7 @@ def s3push( localName , remoteName=None , remotePrefix=None , fixName=True , pla
 
     if remotePrefix is None:
         if distName is None:
-            remotePrefix = getGitBranchString( "-" ) + "-latest"
+            remotePrefix = utils.getGitBranchString( "-" ) + "-latest"
         else:
             remotePrefix = "-" + distName
 

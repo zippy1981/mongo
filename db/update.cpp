@@ -237,7 +237,7 @@ namespace mongo {
                 }
 
                 while( i.more() ) {
-                    bb.appendAs( i.next() , bb.numStr( n - 1 ).c_str() );
+                    bb.appendAs( i.next() , bb.numStr( n - 1 ) );
                     n++;
                 }
             }
@@ -871,7 +871,7 @@ namespace mongo {
         StringBuilder& ss = debug.str;
 
         if ( logLevel > 2 )
-            ss << " update: " << updateobj;
+            ss << " update: " << updateobj.toString();
         
         /* idea with these here it to make them loop invariant for multi updates, and thus be a bit faster for that case */
         /* NOTE: when yield() is added herein, these must be refreshed after each call to yield! */

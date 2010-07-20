@@ -30,19 +30,27 @@ namespace mongo {
     ReplSet *theReplSet = 0;
 
     void ReplSetImpl::assumePrimary() { 
+        assert( iAmPotentiallyHot() );
         writelock lk("admin."); // so we are synchronized with _logOp() 
-        _myState = PRIMARY;
+        _myState = RS_PRIMARY;
         _currentPrimary = _self;
         log(2) << "replSet self is now primary" << rsLog;
     }
 
+    void ReplSetImpl::changeState(MemberState s) { 
+        /* TODO LOCKING */
+        /* TODO call this don't touch mystate directly */
+        _myState = s;
+    }
+
     void ReplSetImpl::relinquish() { 
-        if( state() == PRIMARY ) {
-            _myState = RECOVERING;
+        if( state() == RS_PRIMARY ) {
+            _myState = RS_RECOVERING;
             log() << "replSet info relinquished primary state" << rsLog;
         }
-        else if( state() == STARTUP2 )
-            _myState = RECOVERING;
+        else if( state() == RS_STARTUP2 ) {
+            _myState = RS_RECOVERING;
+        }
     }
 
     void ReplSetImpl::msgUpdateHBInfo(HeartbeatInfo h) { 
@@ -63,7 +71,7 @@ namespace mongo {
     }
 
     void ReplSetImpl::_fillIsMasterHost(const Member *m, vector<string>& hosts, vector<string>& passives, vector<string>& arbiters) {
-        if( m->hot() ) {
+        if( m->potentiallyHot() ) {
             hosts.push_back(m->h().toString());
         }
         else if( !m->config().arbiterOnly ) {
@@ -78,7 +86,7 @@ namespace mongo {
         bool isp = isPrimary();
         b.append("ismaster", isp);
         b.append("secondary", isSecondary());
-        b.append("msg", "replica sets not yet fully implemented. do not use yet.");
+        b.append("msg", "replica sets not yet fully implemented. do not use yet. v1.5.6=alpha");
         {
             vector<string> hosts, passives, arbiters;
             _fillIsMasterHost(_self, hosts, passives, arbiters);
@@ -103,6 +111,8 @@ namespace mongo {
             if( m )
                 b.append("primary", m->h().toString());
         }
+        if( myConfig().arbiterOnly )
+            b.append("arbiterOnly", true);
     }
 
     /** @param cfgString <setname>/<seedhost1>,<seedhost2> */
@@ -153,8 +163,8 @@ namespace mongo {
     {
         memset(_hbmsg, 0, sizeof(_hbmsg));
         *_hbmsg = '.'; // temp...just to see
-        h = 0;
-        _myState = STARTUP;
+        lastH = 0;
+        _myState = RS_STARTUP;
         _currentPrimary = 0;
 
         vector<HostAndPort> *seeds = new vector<HostAndPort>;
@@ -183,8 +193,8 @@ namespace mongo {
         assert( lastOpTimeWritten.isNull() );
         readlock lk(rsoplog);
         BSONObj o;
-        if( Helpers::getLast(rsoplog.c_str(), o) ) { 
-            cout << "TEMP " << o.toString() << endl;
+        if( Helpers::getLast(rsoplog, o) ) { 
+            lastH = o["h"].numberLong();
             lastOpTimeWritten = o["ts"]._opTime();
             uassert(13290, "bad replSet oplog entry?", !lastOpTimeWritten.isNull());
         }
@@ -202,9 +212,9 @@ namespace mongo {
             dbexit( EXIT_REPLICATION_ERROR );
             return;
         }
-        _myState = STARTUP2;
+        _myState = RS_STARTUP2;
         startThreads();
-        newReplUp();
+        newReplUp(); // oplog.cpp
     }
 
     ReplSetImpl::StartupStatus ReplSetImpl::startupStatus = PRESTART;
@@ -224,7 +234,8 @@ namespace mongo {
             }
             if( me == 0 ) {
                 // log() << "replSet config : " << _cfg->toString() << rsLog;
-                log() << "replSet warning can't find self in the repl set configuration" << rsLog;
+                log() << "replSet warning can't find self in the repl set configuration:" << rsLog;
+                log() << c.toString() << rsLog;
                 return false;
             }
             uassert( 13302, "replSet error self appears twice in the repl set configuration", me<=1 );
@@ -241,18 +252,22 @@ namespace mongo {
 
         endOldHealthTasks();
 
+        int oldPrimaryId = currentPrimary() ? currentPrimary()->id() : -1;
+        _currentPrimary = 0;
         _self = 0;
         for( vector<ReplSetConfig::MemberCfg>::iterator i = _cfg->members.begin(); i != _cfg->members.end(); i++ ) { 
             const ReplSetConfig::MemberCfg& m = *i;
+            Member *mi;
             if( m.h.isSelf() ) {
                 assert( _self == 0 );
-                _self = new Member(m.h, m._id, &m);
-                _selfId = m._id;
+                mi = _self = new Member(m.h, m._id, &m, true);
             } else {
-                Member *mi = new Member(m.h, m._id, &m);
+                mi = new Member(m.h, m._id, &m, false);
                 _members.push(mi);
                 startHealthTaskFor(mi);
             }
+            if( mi->id() == oldPrimaryId )
+                _currentPrimary = mi;
         }
         return true;
     }
@@ -320,6 +335,8 @@ namespace mongo {
                         startupStatusMsg = "can't get " + rsConfigNs + " config from self or any seed (EMPTYCONFIG)";
                         log() << "replSet can't get " << rsConfigNs << " config from self or any seed (EMPTYCONFIG)" << rsLog;
                         log() << "replSet have you ran replSetInitiate yet?" << rsLog;
+                        if( _seeds->size() == 0 )
+                            log() << "replSet no seed hosts were specified on the command line - that might be the issue" << rsLog;
                         log() << "replSet sleeping 20sec and will try again." << rsLog;
                     }
                     else {
@@ -356,16 +373,18 @@ namespace mongo {
     void ReplSetImpl::_fatal() 
     { 
         //lock l(this);
-        _myState = FATAL; 
+        _myState = RS_FATAL; 
         sethbmsg("fatal error");
         log() << "replSet error fatal error, stopping replication" << rsLog; 
     }
 
 
-    void ReplSet::haveNewConfig(ReplSetConfig& newConfig) { 
+    void ReplSet::haveNewConfig(ReplSetConfig& newConfig, bool addComment) { 
         lock l(this); // convention is to lock replset before taking the db rwlock
         writelock lk("");
-        bo comment = BSON( "msg" << "Reconfig set" << "version" << newConfig.version );
+        bo comment;
+        if( addComment )
+            comment = BSON( "msg" << "Reconfig set" << "version" << newConfig.version );
         newConfig.saveConfigLocally(comment);
         try { 
             initFromConfig(newConfig);
@@ -374,6 +393,17 @@ namespace mongo {
         catch(...) { 
             log() << "replSet error unexpected exception in haveNewConfig()" << rsLog;
             _fatal();
+        }
+    }
+
+    void Manager::msgReceivedNewConfig(BSONObj o) {
+        log() << "replset msgReceivedNewConfig version: " << o["version"].toString() << rsLog;
+        ReplSetConfig c(o);
+        if( c.version > rs->config().version )
+            theReplSet->haveNewConfig(c, false);
+        else { 
+            log() << "replSet info msgReceivedNewConfig but version isn't higher " << 
+                c.version << ' ' << rs->config().version << rsLog;
         }
     }
 

@@ -286,7 +286,7 @@ namespace mongo {
             if( authed ) {
                 result.append("remote", replPair->remote);
                 if ( !replPair->info.empty() )
-                    result.append("info", replPair->info);
+                    result.append("info", replPair->info.toString());
             }
         }
         else {
@@ -579,7 +579,7 @@ namespace mongo {
         int n = 0;
         for ( set<string>::iterator i = addDbNextPass.begin(); i != addDbNextPass.end(); i++ ) {
             n++;
-            dbsNextPassBuilder.appendBool(i->c_str(), 1);
+            dbsNextPassBuilder.appendBool(*i, 1);
         }
         if ( n )
             b.append("dbsNextPass", dbsNextPassBuilder.done());
@@ -588,7 +588,7 @@ namespace mongo {
         n = 0;
         for ( set<string>::iterator i = incompleteCloneDbs.begin(); i != incompleteCloneDbs.end(); i++ ) {
             n++;
-            incompleteCloneDbsBuilder.appendBool(i->c_str(), 1);
+            incompleteCloneDbsBuilder.appendBool(*i, 1);
         }
         if ( n )
             b.append("incompleteCloneDbs", incompleteCloneDbsBuilder.done());
@@ -786,6 +786,7 @@ namespace mongo {
         {
             dbtemprelease t;
             oplogReader.connect(hostName);
+            /* todo use getDatabaseNames() method here */
             bool ok = oplogReader.conn()->runCommand( "admin", BSON( "listDatabases" << 1 ), info );
             massert( 10385 ,  "Unable to get database list", ok );
         }
@@ -931,7 +932,8 @@ namespace mongo {
         bool empty = ctx.db()->isEmpty();
         bool incompleteClone = incompleteCloneDbs.count( clientName ) != 0;
 
-        log( 6 ) << "ns: " << ns << ", justCreated: " << ctx.justCreated() << ", empty: " << empty << ", incompleteClone: " << incompleteClone << endl;
+        if( logLevel >= 6 )
+            log(6) << "ns: " << ns << ", justCreated: " << ctx.justCreated() << ", empty: " << empty << ", incompleteClone: " << incompleteClone << endl;
         
         // always apply admin command command
         // this is a bit hacky -- the semantics of replication/commands aren't well specified
@@ -1117,7 +1119,7 @@ namespace mongo {
         log(2) << "repl: sync_pullOpLog " << ns << " syncedTo:" << syncedTo.toStringLong() << '\n';
 
         bool tailing = true;
-        oplogReader.getReady();
+        oplogReader.tailCheck();
 
         if ( replPair && replPair->state == ReplPair::State_Master ) {
             dblock lk;

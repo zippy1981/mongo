@@ -1045,12 +1045,14 @@ Geo.distance = function( a , b ){
                       Math.pow( bx - ax , 2 ) );
 }
 
-rs = {};
+rs = function () { "try rs.help()" }
+
 rs.help = function () {
     print("\trs.status()                     { replSetGetStatus : 1 } checks repl set status");
     print("\trs.initiate()                   { replSetInitiate : null } initiates set with default settings");
     print("\trs.initiate(cfg)                { replSetInitiate : cfg } initiates set with configuration cfg");
     print("\trs.add(hostportstr)             add a new member to the set with default attributes");
+    print("\trs.add(membercfgobj)            add a new member to the set with extra attributes");
     print("\trs.conf()                       return configuration from local.system.replset");
     print();
     print("\tdb.isMaster()                   check who is primary");
@@ -1060,6 +1062,8 @@ rs.help = function () {
 rs.status = function () { return db._adminCommand("replSetGetStatus"); }
 rs.initiate = function (c) { return db._adminCommand({ replSetInitiate: c }); }
 rs.add = function (hostport) {
+    var cfg = hostport;
+
     var local = db.getSisterDB("local");
     assert(local.system.replset.count() == 1, "error: local.system.replset unexpected (or empty) contents");
     var c = local.system.replset.findOne();
@@ -1068,7 +1072,9 @@ rs.add = function (hostport) {
     var max = 0;
     for (var i in c.members)
         if (c.members[i]._id > max) max = c.members[i]._id;
-    c.members.push({ _id: max + 1, host: hostport });
+    if (isString(hostport))
+        cfg = { _id: max + 1, host: hostport };
+    c.members.push(cfg);
     return db._adminCommand({ replSetReconfig: c });
 }
 rs.conf = function () { return db.getSisterDB("local").system.replset.findOne(); }

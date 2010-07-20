@@ -39,8 +39,7 @@ namespace mongo {
     /* member of a replica set */
     class Member : public List1<Member>::Base {
     public:
-        Member(HostAndPort h, unsigned ord, const ReplSetConfig::MemberCfg *c);
-
+        Member(HostAndPort h, unsigned ord, const ReplSetConfig::MemberCfg *c, bool self);
         string fullName() const { return h().toString(); }
         const ReplSetConfig::MemberCfg& config() const { return *_config; }
         const HeartbeatInfo& hbinfo() const { return _hbinfo; }
@@ -48,7 +47,7 @@ namespace mongo {
         MemberState state() const { return _hbinfo.hbstate; }
         const HostAndPort& h() const { return _h; }
         unsigned id() const { return _hbinfo.id(); }
-        bool hot() const { return _config->hot(); }
+        bool potentiallyHot() const { return _config->potentiallyHot(); } // not arbiter, not priority 0
 
         void summarizeAsHtml(stringstream& s) const;
         friend class ReplSetImpl;
@@ -67,7 +66,7 @@ namespace mongo {
         virtual void starting();
     public:
         Manager(ReplSetImpl *rs);
-        void msgReceivedNewConfig(BSONObj) { assert(false); }
+        void msgReceivedNewConfig(BSONObj);
         void msgCheckNewState();
     };
 
@@ -159,37 +158,38 @@ namespace mongo {
 
         /* todo thread */
         void msgUpdateHBInfo(HeartbeatInfo);
-        bool isPrimary() const { return _myState == PRIMARY; }
-        bool isSecondary() const { return _myState == SECONDARY; }
+        bool isPrimary() const { return _myState == RS_PRIMARY; }
+        bool isSecondary() const { return _myState == RS_SECONDARY; }
 
         //bool initiated() const { return curOpTime.initiated(); }
 
         OpTime lastOpTimeWritten;
-        long long h;
+        long long lastH; // hash we use to make sure we are reading the right flow of ops and aren't on an out-of-date "fork"
     private:
-        unsigned _selfId; // stored redundantly we hit this a lot
-
         set<ReplSetHealthPollTask*> healthTasks;
         void endOldHealthTasks();
         void startHealthTaskFor(Member *m);
 
     private:
         Consensus elect;
-        bool ok() const { return _myState != FATAL; }
+        bool ok() const { return _myState != RS_FATAL; }
 
         void relinquish();
         void assumePrimary();
         void loadLastOpTimeWritten();
+        void changeState(MemberState s);
 
     protected:
         // "heartbeat message"
         // sent in requestHeartbeat respond in field "hbm" 
         char _hbmsg[256];
-        void sethbmsg(string s) { 
+    public:
+        void sethbmsg(string s, int logLevel = 2) { 
             assert(s.size() < sizeof(_hbmsg));
             strcpy(_hbmsg, s.c_str());
+            log(logLevel) << "replSet " << s << rsLog;
         }
-
+    protected:
         bool initFromConfig(ReplSetConfig& c); // true if ok; throws if config really bad; false if config doesn't include self
         void _fillIsMaster(BSONObjBuilder&);
         void _fillIsMasterHost(const Member*, vector<string>&, vector<string>&, vector<string>&);
@@ -226,12 +226,14 @@ namespace mongo {
         list<HostAndPort> memberHostnames() const;
         const Member* currentPrimary() const { return _currentPrimary; }
         const ReplSetConfig::MemberCfg& myConfig() const { return _self->config(); }
+        bool iAmArbiterOnly() const { return myConfig().arbiterOnly; }
+        bool iAmPotentiallyHot() const { return myConfig().potentiallyHot(); }
         const Member *_currentPrimary;
         Member *_self;        
         List1<Member> _members; /* all members of the set EXCEPT self. */
 
     public:
-        unsigned selfId() const { return _selfId; }
+        unsigned selfId() const { return _self->id(); }
         shared_ptr<Manager> mgr;
 
     private:
@@ -248,7 +250,13 @@ namespace mongo {
 
     private:
         /* pulling data from primary related - see rs_sync.cpp */
+        void _syncDoInitialSync();
         void syncDoInitialSync();
+        void _syncThread();
+        void syncTail();
+        void syncApply(const BSONObj &o);
+    public:
+        void syncThread();
     };
 
     class ReplSet : public ReplSetImpl { 
@@ -268,8 +276,10 @@ namespace mongo {
         void summarizeStatus(BSONObjBuilder& b) const  { _summarizeStatus(b); }
         void fillIsMaster(BSONObjBuilder& b) { _fillIsMaster(b); }
 
-        /* we have a new config (reconfig) - apply it. */
-        void haveNewConfig(ReplSetConfig& c);
+        /* we have a new config (reconfig) - apply it. 
+           @param comment write a no-op comment to the oplog about it.  only makes sense if one is primary and initiating the reconf.
+        */
+        void haveNewConfig(ReplSetConfig& c, bool comment);
 
         /* if we delete old configs, this needs to assure locking. currently we don't so it is ok. */
         const ReplSetConfig& getConfig() { return config(); }
@@ -311,8 +321,12 @@ namespace mongo {
 
     /** inlines ----------------- */
 
-    inline Member::Member(HostAndPort h, unsigned ord, const ReplSetConfig::MemberCfg *c) : 
-        _config(c), _h(h), _hbinfo(ord) { }
+    inline Member::Member(HostAndPort h, unsigned ord, const ReplSetConfig::MemberCfg *c, bool self) : 
+        _config(c), _h(h), _hbinfo(ord) { 
+            if( self ) { 
+                _hbinfo.health = 1.0;
+            }
+    }
 
     inline bool ReplSet::isMaster(const char *client) {         
         /* todo replset */

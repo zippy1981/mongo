@@ -30,6 +30,7 @@
 #include "../db/jsobj.h"
 #include "../db/dbmessage.h"
 #include "../db/query.h"
+#include "../db/cmdline.h"
 
 #include "../client/connpool.h"
 #include "../client/distlock.h"
@@ -45,6 +46,93 @@
 using namespace std;
 
 namespace mongo {
+
+    class MoveTimingHelper {
+    public:
+        MoveTimingHelper( const string& where , const string& ns )
+            : _where( where ) , _ns( ns ){
+            _next = 1;
+        }
+
+        ~MoveTimingHelper(){
+            configServer.logChange( (string)"moveChunk." + _where , _ns, _b.obj() );
+        }
+        
+        void done( int step ){
+            assert( step == _next++ );
+            
+            stringstream ss;
+            ss << "step" << step;
+            string s = ss.str();
+            
+            cc().curop()->setMessage( s.c_str() );
+            
+            _b.appendNumber( s , _t.millis() );
+            _t.reset();
+        }
+        
+        
+    private:
+        Timer _t;
+
+        string _where;
+        string _ns;
+        
+        int _next;
+        
+        BSONObjBuilder _b;
+    };
+
+    class RemoveSaver : public Helpers::RemoveCallback , boost::noncopyable {
+    public:
+        RemoveSaver( const string& ns , const string& why) : _out(0){
+            static int NUM = 0;
+
+            _root = dbpath;
+            _root /= "moveChunk";
+            _root /= ns;
+            
+            _file = _root;
+            
+            stringstream ss;
+            ss << why << "." << terseCurrentTime() << "." << NUM++ << ".bson";
+            _file /= ss.str();
+
+        }
+        
+        ~RemoveSaver(){
+            if ( _out ){
+                _out->close();
+                delete _out;
+                _out = 0;
+            }
+        }
+
+        void goingToDelete( const BSONObj& o ){
+            if ( ! cmdLine.moveParanoia )
+                return;
+
+            if ( ! _out ){
+                create_directories( _root );
+                _out = new ofstream();
+                _out->open( _file.string().c_str() , ios_base::out | ios_base::binary );
+                if ( ! _out->good() ){
+                    log( LL_WARNING ) << "couldn't create file: " << _file.string() << " for temp moveChunk logging" << endl;
+                    delete _out;
+                    _out = 0;
+                    return;
+                }
+                
+            }
+            _out->write( o.objdata() , o.objsize() );
+        }
+        
+    private:
+        path _root;
+        path _file;
+        ofstream* _out;
+        
+    };
 
     class ChunkCommandHelper : public Command {
     public:
@@ -280,6 +368,7 @@ namespace mongo {
             
             // -------------------------------
             
+            
             // 1.
             string ns = cmdObj.firstElement().str();
             string to = cmdObj["to"].str();
@@ -327,13 +416,14 @@ namespace mongo {
                 configServer.init( configdb );
             }
 
-
+            MoveTimingHelper timing( "from" , ns );
 
             Shard fromShard( from );
             Shard toShard( to );
             
             log() << "got movechunk: " << cmdObj << endl;
-        
+
+            timing.done(1);
             // 2. 
             
             DistributedLock lockSetup( ConnectionString( shardingState.getConfigServer() , ConnectionString::SYNC ) , ns );
@@ -373,8 +463,8 @@ namespace mongo {
                 conn.done();
             }
             
+            timing.done(2);
             
-
             // 3.
             MigrateStatusHolder statusHolder( ns , min , max );
             {
@@ -390,7 +480,8 @@ namespace mongo {
                                             BSON( "_recvChunkStart" << ns <<
                                                   "from" << from <<
                                                   "min" << min <<
-                                                  "max" << max
+                                                  "max" << max <<
+                                                  "configServer" << configServer.modelServer()
                                                   ) , 
                                             res );
                 conn.done();
@@ -404,6 +495,7 @@ namespace mongo {
                 }
 
             }
+            timing.done( 3 );
             
             // 4. 
             for ( int i=0; i<86400; i++ ){ // don't want a single chunk move to take more than a day
@@ -425,7 +517,8 @@ namespace mongo {
                 if ( res["state"].String() == "steady" )
                     break;
             }
-            
+            timing.done(4);
+
             // 5.
             { 
                 // 5.a
@@ -500,17 +593,22 @@ namespace mongo {
             }
             
             migrateFromStatus.done();
+            timing.done(5);
             // 6. 
             log( LL_WARNING ) << " deleting data before ensuring no more cursors TODO" << endl;
             
+            timing.done(6);
             // 7
             {
                 ShardForceModeBlock sf;
                 writelock lk(ns);
-                long long num = Helpers::removeRange( ns , min , max , true );
+                RemoveSaver rs(ns,"post-cleanup");
+                long long num = Helpers::removeRange( ns , min , max , true , false , &rs );
                 log() << "moveChunk deleted: " << num << endl;
                 result.appendNumber( "numDeleted" , num );
             }
+            
+            timing.done(7);
 
             return true;
             
@@ -570,15 +668,17 @@ namespace mongo {
         }
         
         void _go(){
+            MoveTimingHelper timing( "to" , ns );
+            
             assert( active );
             assert( state == READY );
             assert( ! min.isEmpty() );
             assert( ! max.isEmpty() );
-
+            
             ScopedDbConnection conn( from );
             conn->getLastError(); // just test connection
 
-            { // copy indexes
+            { // 1. copy indexes
                 auto_ptr<DBClientCursor> indexes = conn->getIndexes( ns );
                 vector<BSONObj> all;
                 while ( indexes->more() ){
@@ -593,17 +693,22 @@ namespace mongo {
                     BSONObj idx = all[i];
                     theDataFileMgr.insert( system_indexes.c_str() , idx.objdata() , idx.objsize() );
                 }
+                
+                timing.done(1);
             }
-
-            { // delete any data already in range
+            
+            { // 2. delete any data already in range
                 writelock lk( ns );
-                long long num = Helpers::removeRange( ns , min , max , true );
+                RemoveSaver rs( ns , "preCleanup" );
+                long long num = Helpers::removeRange( ns , min , max , true , false , &rs );
                 if ( num )
                     log( LL_WARNING ) << "moveChunkCmd deleted data already in chunk # objects: " << num << endl;
+
+                timing.done(2);
             }
             
             
-            { // initial bulk clone
+            { // 3. initial bulk clone
                 state = CLONE;
                 auto_ptr<DBClientCursor> cursor = conn->query( ns , Query().minKey( min ).maxKey( max ) , /* QueryOption_Exhaust */ 0 );
                 while ( cursor->more() ){
@@ -614,39 +719,48 @@ namespace mongo {
                     }
                     numCloned++;
                 }
-            }
-            
-            // do bulk of mods
-            state = CATCHUP;
-            while ( true ){
-                BSONObj res;
-                assert( conn->runCommand( "admin" , BSON( "_transferMods" << 1 ) , res ) );
-                if ( res["size"].number() == 0 )
-                    break;
-                
-                apply( res );
-            }
-            
-            // wait for commit
-            state = STEADY;
-            while ( state == STEADY || state == COMMIT_START ){
-                sleepmillis( 20 );
 
-                BSONObj res;
-                if ( ! conn->runCommand( "admin" , BSON( "_transferMods" << 1 ) , res ) ){
-                    log() << "_transferMods failed in STEADY state: " << res << endl;
-                    errmsg = res.toString();
-                    state = FAIL;
-                    return;
-                }
-                if ( res["size"].number() > 0 ){
+                timing.done(3);
+            }
+            
+            { // 4. do bulk of mods
+                state = CATCHUP;
+                while ( true ){
+                    BSONObj res;
+                    assert( conn->runCommand( "admin" , BSON( "_transferMods" << 1 ) , res ) );
+                    if ( res["size"].number() == 0 )
+                        break;
+                    
                     apply( res );
                 }
 
-                if ( state == COMMIT_START )
-                    break;
+                timing.done(4);
             }
-
+            
+            { // 5. wait for commit
+                state = STEADY;
+                while ( state == STEADY || state == COMMIT_START ){
+                    sleepmillis( 20 );
+                    
+                    BSONObj res;
+                    if ( ! conn->runCommand( "admin" , BSON( "_transferMods" << 1 ) , res ) ){
+                        log() << "_transferMods failed in STEADY state: " << res << endl;
+                        errmsg = res.toString();
+                        state = FAIL;
+                        return;
+                    }
+                    if ( res["size"].number() > 0 ){
+                        apply( res );
+                    }
+                    
+                    if ( state == COMMIT_START )
+                        break;
+                    
+                }
+                
+                timing.done(5);
+            }
+            
             state = DONE;
             conn.done();
         }
@@ -679,10 +793,12 @@ namespace mongo {
                 writelock lk(ns);
                 Client::Context cx(ns);
                 
+                RemoveSaver rs( ns , "removedDuring" );
+
                 BSONObjIterator i( xfer["deleted"].Obj() );
                 while ( i.more() ){
                     BSONObj id = i.next().Obj();
-                    //Helpers::removeRange( ns , id , id, false , true );
+                    Helpers::removeRange( ns , id , id, false , true , &rs );
                 }
             }
             
@@ -756,11 +872,14 @@ namespace mongo {
         virtual LockType locktype() const { return WRITE; }  // this is so don't have to do locking internally
 
         bool run(const string& , BSONObj& cmdObj, string& errmsg, BSONObjBuilder& result, bool){
-
+            
             if ( migrateStatus.active ){
                 errmsg = "migrate already in progress";
                 return false;
             }
+            
+            if ( ! configServer.ok() )
+                configServer.init( cmdObj["configServer"].String() );
 
             migrateStatus.prepare();
 

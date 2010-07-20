@@ -492,6 +492,13 @@ namespace mongo {
         return *this;        
     }
     
+    // TODO write a proper implementation that doesn't do a full copy
+    bool FieldRange::operator<=( const FieldRange &other ) {
+        FieldRange temp = *this;
+        temp -= other;
+        return temp.empty();
+    }
+    
     BSONObj FieldRange::addObj( const BSONObj &o ) {
         _objData.push_back( o );
         return o;
@@ -642,7 +649,7 @@ namespace mongo {
         if ( fields.isEmpty() ) {
             BSONObjBuilder b;
             for( map< string, FieldRange >::const_iterator i = _ranges.begin(); i != _ranges.end(); ++i ) {
-                b.append( i->first.c_str(), 1 );
+                b.append( i->first, 1 );
             }
             fields = b.obj();
         }
@@ -881,7 +888,7 @@ namespace mongo {
                 case Array:{
                     BSONObjBuilder subb;
                     appendArray(subb , e.embeddedObject(), true);
-                    b.appendArray(b.numStr(i++).c_str(), subb.obj());
+                    b.appendArray(b.numStr(i++), subb.obj());
                     break;
                 }
                 case Object:{
@@ -895,7 +902,7 @@ namespace mongo {
                 }
                 default:
                     if (_include)
-                        b.appendAs(e, b.numStr(i++).c_str());
+                        b.appendAs(e, b.numStr(i++));
             }
         }
     }

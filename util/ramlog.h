@@ -83,9 +83,9 @@ namespace mongo {
             if( str::startsWith(s, "info") ) {
                 if( str::endsWith(s, " up\n") )
                     return html::green(line);
-                if( str::endsWith(s, " down\n") )
+                else if( str::contains(s, " down ") || str::endsWith(s, " down\n") )
                     return html::yellow(line);
-                return html::blue(line);
+                return line; //html::blue(line);
             }
             
             return line;

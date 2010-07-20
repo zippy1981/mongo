@@ -641,7 +641,8 @@ namespace mongo {
     _honorRecordedPlan( honorRecordedPlan ),
     _bestGuessOnly( bestGuessOnly ),
     _hint( ( hint && !hint->eoo() ) ? hint->wrap() : BSONObj() ),
-    _mayYield( mayYield )
+    _mayYield( mayYield ),
+    _tableScanned()
     {
         if ( !order.isEmpty() || !min.isEmpty() || !max.isEmpty() || !_fros.getSpecial().empty() ) {
             _or = false;
@@ -670,15 +671,10 @@ namespace mongo {
         BSONElement hintElt = _hint.firstElement();
         _currentQps.reset( new QueryPlanSet( _ns, frs, _query, BSONObj(), &hintElt, _honorRecordedPlan, BSONObj(), BSONObj(), _bestGuessOnly, _mayYield ) );
         shared_ptr< QueryOp > ret( _currentQps->runOp( op ) );
-        BSONObj selectedIndexKey = ret->qp().indexKey();
-        const char *first = 0;
-        const char *second = 0;
-        BSONObjIterator i( selectedIndexKey );
-        first = i.next().fieldName();
-        if ( i.more() ) {
-            second = i.next().fieldName();
+        if ( ret->qp().willScanTable() ) {
+            _tableScanned = true;
         }
-        _fros.popOrClause( first, second );
+        _fros.popOrClause();
         return ret;
     }
     

@@ -671,12 +671,12 @@ namespace mongo {
         return -1;
     }
 
-    void BSONObj::getFieldsDotted(const char *name, BSONElementSet &ret ) const {
+    void BSONObj::getFieldsDotted(const StringData& name, BSONElementSet &ret ) const {
         BSONElement e = getField( name );
         if ( e.eoo() ) {
-            const char *p = strchr(name, '.');
+            const char *p = strchr(name.data(), '.');
             if ( p ) {
-                string left(name, p-name);
+                string left(name.data(), p-name.data());
                 const char* next = p+1;
                 BSONElement e = getField( left.c_str() );
 
@@ -993,7 +993,7 @@ namespace mongo {
                 nested2dotted(b, e.embeddedObject(), newbase);
             }else{
                 string newbase = base + e.fieldName();
-                b.appendAs(e, newbase.c_str());
+                b.appendAs(e, newbase);
             }
         }
     }
@@ -1006,6 +1006,20 @@ namespace mongo {
             eb.appendAs(it->second, it->first);
         }
         eb.done();
+    }
+
+    /* BufBuilder --------------------------------------------------------*/
+
+    void BufBuilder::grow_reallocate() {
+        int a = size * 2;
+        if ( a == 0 )
+            a = 512;
+        if ( l > a )
+            a = l + 16 * 1024;
+        if( a > 64 * 1024 * 1024 )
+            msgasserted(10000, "BufBuilder grow() > 64MB");
+        data = (char *) realloc(data, a);
+        size= a;
     }
 
     /*-- test things ----------------------------------------------------*/
@@ -1277,84 +1291,83 @@ namespace mongo {
             timestamp = OpTime::now().asDate();
     }
 
-
-    void BSONObjBuilder::appendMinForType( const string& field , int t ){
+    void BSONObjBuilder::appendMinForType( const StringData& fieldName , int t ){
         switch ( t ){
-        case MinKey: appendMinKey( field.c_str() ); return;
-        case MaxKey: appendMinKey( field.c_str() ); return;
+        case MinKey: appendMinKey( fieldName ); return;
+        case MaxKey: appendMinKey( fieldName ); return;
         case NumberInt:
         case NumberDouble:
         case NumberLong:
-            append( field.c_str() , - numeric_limits<double>::max() ); return;
+            append( fieldName , - numeric_limits<double>::max() ); return;
         case jstOID:
             {
                 OID o;
                 memset(&o, 0, sizeof(o));
-                appendOID( field.c_str() , &o);
+                appendOID( fieldName , &o);
                 return;
             }
-        case Bool: appendBool( field.c_str() , false); return;
-        case Date: appendDate( field.c_str() , 0); return;
-        case jstNULL: appendNull( field.c_str() ); return;
+        case Bool: appendBool( fieldName , false); return;
+        case Date: appendDate( fieldName , 0); return;
+        case jstNULL: appendNull( fieldName ); return;
         case Symbol:
-        case String: append( field.c_str() , "" ); return;
-        case Object: append( field.c_str() , BSONObj() ); return;
+        case String: append( fieldName , "" ); return;
+        case Object: append( fieldName , BSONObj() ); return;
         case Array:
-            appendArray( field.c_str() , BSONObj() ); return;
+            appendArray( fieldName , BSONObj() ); return;
         case BinData:
-            appendBinData( field.c_str() , 0 , Function , (const char *) 0 ); return;
+            appendBinData( fieldName , 0 , Function , (const char *) 0 ); return;
         case Undefined:
-            appendUndefined( field.c_str() ); return;
-        case RegEx: appendRegex( field.c_str() , "" ); return;
+            appendUndefined( fieldName ); return;
+        case RegEx: appendRegex( fieldName , "" ); return;
         case DBRef:
             {
                 OID o;
                 memset(&o, 0, sizeof(o));
-                appendDBRef( field.c_str() , "" , o );
+                appendDBRef( fieldName , "" , o );
                 return;
             }
-        case Code: appendCode( field.c_str() , "" ); return;
-        case CodeWScope: appendCodeWScope( field.c_str() , "" , BSONObj() ); return;
-        case Timestamp: appendTimestamp( field.c_str() , 0); return;
+        case Code: appendCode( fieldName , "" ); return;
+        case CodeWScope: appendCodeWScope( fieldName , "" , BSONObj() ); return;
+        case Timestamp: appendTimestamp( fieldName , 0); return;
 
         };
         log() << "type not support for appendMinElementForType: " << t << endl;
         uassert( 10061 ,  "type not supported for appendMinElementForType" , false );
     }
 
-    void BSONObjBuilder::appendMaxForType( const string& field , int t ){
+    void BSONObjBuilder::appendMaxForType( const StringData& fieldName , int t ){
         switch ( t ){
-        case MinKey: appendMaxKey( field.c_str() );  break;
-        case MaxKey: appendMaxKey( field.c_str() ); break;
+        case MinKey: appendMaxKey( fieldName );  break;
+        case MaxKey: appendMaxKey( fieldName ); break;
         case NumberInt:
         case NumberDouble:
         case NumberLong:
-            append( field.c_str() , numeric_limits<double>::max() );
+            append( fieldName , numeric_limits<double>::max() );
             break;
         case BinData:
-            appendMinForType( field , jstOID );
+            appendMinForType( fieldName , jstOID );
             break;
         case jstOID:
             {
                 OID o;
                 memset(&o, 0xFF, sizeof(o));
-                appendOID( field.c_str() , &o);
+                appendOID( fieldName , &o);
                 break;
             }
         case Undefined:
         case jstNULL:
-            appendMinForType( field , NumberInt );
-        case Bool: appendBool( field.c_str() , true); break;
-        case Date: appendDate( field.c_str() , 0xFFFFFFFFFFFFFFFFLL ); break;
+            appendMinForType( fieldName , NumberInt );
+        case Bool: appendBool( fieldName , true); break;
+        case Date: appendDate( fieldName , 0xFFFFFFFFFFFFFFFFLL ); break;
         case Symbol:
-        case String: append( field.c_str() , BSONObj() ); break;
+        case String: append( fieldName , BSONObj() ); break;
         case Code:
         case CodeWScope:
-            appendCodeWScope( field.c_str() , "ZZZ" , BSONObj() ); break;
+            appendCodeWScope( fieldName , "ZZZ" , BSONObj() ); break;
         case Timestamp:
-            appendTimestamp( field.c_str() , numeric_limits<unsigned long long>::max() ); break;
+            appendTimestamp( fieldName , numeric_limits<unsigned long long>::max() ); break;
         default:
-            appendMinForType( field , t + 1 );
+            appendMinForType( fieldName , t + 1 );
         }
     }
 
@@ -1371,7 +1384,7 @@ namespace mongo {
         "90", "91", "92", "93", "94", "95", "96", "97", "98", "99",
     };
 
-    bool BSONObjBuilder::appendAsNumber( const string& fieldName , const string& data ){
+    bool BSONObjBuilder::appendAsNumber( const StringData& fieldName , const string& data ){
         if ( data.size() == 0 )
             return false;
         
@@ -1397,7 +1410,7 @@ namespace mongo {
         
         if ( hasDec ){
             double d = atof( data.c_str() );
-            append( fieldName.c_str() , d );
+            append( fieldName , d );
             return true;
         }
         
