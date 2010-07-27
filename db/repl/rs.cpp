@@ -28,6 +28,7 @@ namespace mongo {
 
     bool replSet = false;
     ReplSet *theReplSet = 0;
+    extern string *discoveredSeed;
 
     void ReplSetImpl::assumePrimary() { 
         assert( iAmPotentiallyHot() );
@@ -36,10 +37,7 @@ namespace mongo {
         log(2) << "replSet self (" << _self->id() << ") is now primary" << rsLog;
     }
 
-    void ReplSetImpl::changeState(MemberState s) { 
-        // todo check if primary ptr needs settings or removing???
-        box.change(s);
-    }
+    void ReplSetImpl::changeState(MemberState s) { box.change(s, _self); }
 
     void ReplSetImpl::relinquish() { 
         if( box.getState().primary() ) {
@@ -49,6 +47,15 @@ namespace mongo {
         else if( box.getState().startup2() ) {
             // ? add comment
             changeState(MemberState::RS_RECOVERING);
+        }
+    }
+
+    /* look freshly for who is primary - includes relinquishing ourself. */
+    void ReplSetImpl::forgetPrimary() { 
+        if( box.getState().primary() ) 
+            relinquish();
+        else {
+            box.setOtherPrimary(0);
         }
     }
 
@@ -155,7 +162,7 @@ namespace mongo {
                 }
                 uassert(13096, "bad --replSet config string - dups?", seedSet.count(m) == 0 );
                 seedSet.insert(m);
-                uassert(13101, "can't use localhost in replset host list", !m.isLocalHost());
+                //uassert(13101, "can't use localhost in replset host list", !m.isLocalHost());
                 if( m.isSelf() ) {
                     log() << "replSet ignoring seed " << m.toString() << " (=self)" << rsLog;
                 } else
@@ -269,15 +276,13 @@ namespace mongo {
 
         endOldHealthTasks();
 
-
-
         int oldPrimaryId = -1;
         {
             const Member *p = box.getPrimary();
             if( p ) 
                 oldPrimaryId = p->id();
         }
-        box.setOtherPrimary(0);
+        forgetPrimary();
         _self = 0;
         for( vector<ReplSetConfig::MemberCfg>::iterator i = _cfg->members.begin(); i != _cfg->members.end(); i++ ) { 
             const ReplSetConfig::MemberCfg& m = *i;
@@ -346,6 +351,16 @@ namespace mongo {
                         log() << "replSet exception trying to load config from " << *i << " : " << e.toString() << rsLog;
                     }
                 }
+
+                if( discoveredSeed ) { 
+                    try {
+                        configs.push_back( ReplSetConfig(HostAndPort(*discoveredSeed)) );
+                    }
+                    catch( DBException& ) { 
+                        log(1) << "replSet exception trying to load config from discovered seed " << *discoveredSeed << rsLog;
+                    }
+                }
+
                 int nok = 0;
                 int nempty = 0;
                 for( vector<ReplSetConfig>::iterator i = configs.begin(); i != configs.end(); i++ ) { 
@@ -458,6 +473,15 @@ namespace mongo {
                 theReplSet->fatal();
         }
         cc().shutdown();
+    }
+
+}
+
+namespace boost { 
+
+    void assertion_failed(char const * expr, char const * function, char const * file, long line)
+    {
+        mongo::log() << "boost assertion failure " << expr << ' ' << function << ' ' << file << ' ' << line << endl;
     }
 
 }

@@ -35,12 +35,20 @@ namespace mongo {
 
     using namespace bson;
 
+    extern bool replSetBlind;
+
+    // hacky
+    string *discoveredSeed = 0;
+
     /* { replSetHeartbeat : <setname> } */
     class CmdReplSetHeartbeat : public ReplSetCommand {
     public:
         virtual bool adminOnly() const { return false; }
         CmdReplSetHeartbeat() : ReplSetCommand("replSetHeartbeat") { }
         virtual bool run(const string& , BSONObj& cmdObj, string& errmsg, BSONObjBuilder& result, bool fromRepl) {
+            if( replSetBlind ) 
+                return false;
+
             /* we don't call ReplSetCommand::check() here because heartbeat 
                checks many things that are pre-initialization. */
             if( !replSet ) {
@@ -64,7 +72,11 @@ namespace mongo {
             if( cmdObj["checkEmpty"].trueValue() ) { 
                 result.append("hasData", replHasDatabases());
             }
-            if( theReplSet == 0 ) { 
+            if( theReplSet == 0 ) {
+                string from( cmdObj.getStringField("from") );
+                if( !from.empty() && discoveredSeed == 0 ) {
+                    discoveredSeed = new string(from);
+                }
                 errmsg = "still initializing";
                 return false;
             }
@@ -88,8 +100,13 @@ namespace mongo {
     } cmdReplSetHeartbeat;
 
     /* throws dbexception */
-    bool requestHeartbeat(string setName, string memberFullName, BSONObj& result, int myCfgVersion, int& theirCfgVersion, bool checkEmpty) { 
-        BSONObj cmd = BSON( "replSetHeartbeat" << setName << "v" << myCfgVersion << "pv" << 1 << "checkEmpty" << checkEmpty );
+    bool requestHeartbeat(string setName, string from, string memberFullName, BSONObj& result, int myCfgVersion, int& theirCfgVersion, bool checkEmpty) { 
+        if( replSetBlind ) { 
+            //sleepmillis( rand() );
+            return false;
+        }
+
+        BSONObj cmd = BSON( "replSetHeartbeat" << setName << "v" << myCfgVersion << "pv" << 1 << "checkEmpty" << checkEmpty << "from" << from );
 
         // we might be talking to ourself - generally not a great idea to do outbound waiting calls in a write lock
         assert( !dbMutex.isWriteLocked() );
@@ -111,8 +128,6 @@ namespace mongo {
 
         string name() { return "ReplSetHealthPollTask"; }
         void doWork() { 
-            //cout << "TEMP healthpool dowork " << endl;
-
             if ( !theReplSet ) {
                 log() << "theReplSet not initialized yet, skipping health poll this round" << rsLog;
                 return;
@@ -123,7 +138,7 @@ namespace mongo {
             try { 
                 BSONObj info;
                 int theirConfigVersion = -10000;
-                bool ok = requestHeartbeat(theReplSet->name(), h.toString(), info, theReplSet->config().version, theirConfigVersion);
+                bool ok = requestHeartbeat(theReplSet->name(), theReplSet->selfFullName(), h.toString(), info, theReplSet->config().version, theirConfigVersion);
                 mem.lastHeartbeat = time(0); // we set this on any response - we don't get this far if couldn't connect because exception is thrown
                 {
                     be state = info["state"];
@@ -156,7 +171,9 @@ namespace mongo {
                 down(mem, "connect/transport error");             
             }
             m = mem;
-            //cout << "TEMP sending msgupdatehbinfo" << mem.hbstate << endl;
+
+            ReplSet *rs = theReplSet;
+
             theReplSet->mgr->send( boost::bind(&ReplSet::msgUpdateHBInfo, theReplSet, mem) );
 
             static time_t last = 0;

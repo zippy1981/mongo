@@ -63,6 +63,9 @@ namespace mongo {
     /** called as the health threads get new results */
     void Manager::msgCheckNewState() {
         {
+            theReplSet->assertValid();
+            rs->assertValid();
+
             RSBase::lock lk(rs);
 
             if( busyWithElectSelf ) return;
@@ -118,14 +121,20 @@ namespace mongo {
             /* didn't find anyone who wants to be primary */
 
             if( p ) { 
-                /* we are already primary, and nothing significant out there has changed. */
-                /* TODO: if !aMajoritySeemsToBeUp, relinquish */
+                /* we are already primary */
 
                 if( p != rs->_self ) { 
                     rs->sethbmsg("error p != rs->self in checkNewState");
                     log() << "replSet " << p->fullName() << rsLog;
                     log() << "replSet " << rs->_self->fullName() << rsLog;
+                    return;
                 }
+
+                if( !rs->elect.aMajoritySeemsToBeUp() ) { 
+                    log() << "replSet can't see a majority of the set, relinquishing primary" << rsLog;
+                    rs->relinquish();
+                }
+
                 return;
             }
 
@@ -137,7 +146,7 @@ namespace mongo {
             /* no one seems to be primary.  shall we try to elect ourself? */
             if( !rs->elect.aMajoritySeemsToBeUp() ) { 
                 static int n;
-                log(++n <= 5 ? 0 : 1) << "replSet can't see a majority, won't consider electing self";
+                log(++n <= 5 ? 0 : 1) << "replSet can't see a majority, won't consider electing self" << rsLog;
                 return;
             }
 

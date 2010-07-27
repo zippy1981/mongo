@@ -72,7 +72,7 @@ namespace mongo {
         s << td( id() );
         double h = hbinfo().health;
         bool ok = h > 0;
-        s << td(h);
+        s << td(red(str::stream() << h,h == 0));
         s << td(ago(hbinfo().upSince));
         bool never = false;
         {
@@ -86,7 +86,13 @@ namespace mongo {
             s << td(h);
         }
         s << td(config().votes);
-        s << td( grey(ReplSet::stateAsStr(state()), !ok) );
+        { 
+            string stateText = ReplSet::stateAsStr(state());
+            if( ok || stateText.empty() ) 
+                s << td(stateText); // text blank if we've never connected
+            else
+                s << td( grey(str::stream() << "(was " << ReplSet::stateAsStr(state()) << ')', true) );
+        }
         s << td( grey(hbinfo().lastHeartbeatMsg,!ok) );
         stringstream q;
         q << "/_replSetOplog?" << id();

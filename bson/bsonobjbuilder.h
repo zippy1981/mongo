@@ -508,6 +508,11 @@ namespace mongo {
             return BSONObj(_done());
         }
 
+        // Like 'done' above, but does not construct a BSONObj to return to the caller.
+        void doneFast() {
+            (void)_done();
+        }
+
         /** Peek at what is in the builder, but leave the builder ready for more appends.
             The returned object is only valid until the next modification or destruction of the builder.
             Intended use case: append a field if not already there.
@@ -639,6 +644,8 @@ namespace mongo {
         
         BSONObj done() { return _b.done(); }
         
+        void doneFast() { _b.doneFast(); }
+        
         template <typename T>
         BSONArrayBuilder& append(const StringData& name, const T& x){
             fill( name );
@@ -670,7 +677,8 @@ namespace mongo {
         void fill( const StringData& name ) {
             char *r;
             int n = strtol( name.data(), &r, 10 );
-            uassert( 13048, (string)"can't append to array using string field name [" + name.data() + "]" , !*r );
+            if ( *r )
+                uasserted( 13048, (string)"can't append to array using string field name [" + name.data() + "]" );
             while( _i < n )
                 append( nullElt() );
         }
