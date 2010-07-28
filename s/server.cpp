@@ -21,13 +21,16 @@
 #include "../util/unittest.h"
 #include "../client/connpool.h"
 #include "../util/message_server.h"
+#include "../util/stringutils.h"
 #include "../util/version.h"
+#include "../db/dbwebserver.h"
 
 #include "server.h"
 #include "request.h"
 #include "config.h"
 #include "chunk.h"
 #include "balance.h"
+#include "grid.h"
 
 namespace mongo {
     
@@ -161,8 +164,6 @@ int main(int argc, char* argv[], char *envp[] ) {
     CmdLine::addGlobalOptions( options , hidden );
     
     options.add_options()
-        ("bind_ip", po::value<string>()->default_value(""),
-         "comma separated list of ip addresses to listen on - all local ips by default")
         ( "configdb" , po::value<string>() , "1 or 3 comma separated config servers" )
         ( "test" , "just run unit tests" )
         ( "upgrade" , "upgrade meta data version" )
@@ -207,22 +208,32 @@ int main(int argc, char* argv[], char *envp[] ) {
     }
 
     vector<string> configdbs;
-    {
-        string s = params["configdb"].as<string>();
-        while ( true ){
-            size_t idx = s.find( ',' );
-            if ( idx == string::npos ){
-                configdbs.push_back( s );
-                break;
-            }
-            configdbs.push_back( s.substr( 0 , idx ) );
-            s = s.substr( idx + 1 );
-        }
-    }
-
+    splitStringDelim( params["configdb"].as<string>() , &configdbs , ',' );
     if ( configdbs.size() != 1 && configdbs.size() != 3 ){
         out() << "need either 1 or 3 configdbs" << endl;
         return 5;
+    }
+
+    // we either have a seeting were all process are in localhost or none is
+    for ( vector<string>::const_iterator it = configdbs.begin() ; it != configdbs.end() ; ++it ){
+        try {
+
+            HostAndPort configAddr( *it );  // will throw if address format is invalid
+
+            if ( it == configdbs.begin() ){
+                grid.setAllowLocalHost( configAddr.isLocalHost() );
+            }
+
+            if ( configAddr.isLocalHost() != grid.allowLocalHost() ){
+                out() << "cannot mix localhost and ip addresses in configdbs" << endl;
+                return 10;
+            }
+
+        } 
+        catch ( DBException& e) {
+            out() << "configdb: " << e.what() << endl;
+            return 9;
+        }
     }
     
     pool.addHook( &shardingConnectionHook );
@@ -262,12 +273,14 @@ int main(int argc, char* argv[], char *envp[] ) {
         return configError;
     }
     configServer.reloadSettings();
-    
+
     init();
 
+    boost::thread web( webServerThread );
+    
     MessageServer::Options opts;
     opts.port = cmdLine.port;
-    opts.ipList = params["bind_ip"].as<string>();
+    opts.ipList = cmdLine.bind_ip;
     start(opts);
 
     dbexit( EXIT_CLEAN );

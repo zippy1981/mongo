@@ -37,12 +37,14 @@ namespace mongo {
             vector<string>& headers, // if completely empty, content-type: text/html will be added
             const SockAddr &from
         ) = 0;
+
+        // --- static helpers ----
+
+        static void parseParams( BSONObj & params , string query );
         
-    protected:
-        string parseURL( const char * buf );
-        string parseMethod( const char * headers );
-        string getHeader( const char * headers , string name );
-        void parseParams( BSONObj & params , string query );
+        static string parseURL( const char * buf );
+        static string parseMethod( const char * headers );
+        static string getHeader( const char * headers , string name );
         static const char *body( const char *buf );
 
         static string urlDecode(const char* s);

@@ -240,7 +240,7 @@ AddOption("--nostrip",
 
 AddOption("--sharedclient",
           dest="sharedclient",
-          action="store",
+          action="store_true",
           help="build a libmongoclient.so/.dll")
 
 AddOption("--full",
@@ -388,7 +388,7 @@ class InstallSetup:
 
     def justClient(self):
         self.binaries = False
-        self.libraries = True
+        self.libraries = False
         self.clientSrc = True
         self.headers = True
         self.bannerDir = "distsrc/client/"
@@ -431,12 +431,13 @@ else:
 coreDbFiles = [ "db/commands.cpp" ]
 coreServerFiles = [ "util/message_server_port.cpp" , 
                     "client/parallel.cpp" ,  
+                    "util/miniwebserver.cpp" , "db/dbwebserver.cpp" , 
                     "db/matcher.cpp" , "db/indexkey.cpp" , "db/dbcommands_generic.cpp" ]
 
 if GetOption( "asio" ) != None:
     coreServerFiles += [ "util/message_server_asio.cpp" ]
 
-serverOnlyFiles = Split( "db/query.cpp db/update.cpp db/introspect.cpp db/btree.cpp db/clientcursor.cpp db/tests.cpp db/repl.cpp db/repl/rs.cpp db/repl/consensus.cpp db/repl/rs_initiate.cpp db/repl/replset_commands.cpp db/repl/manager.cpp db/repl/health.cpp db/repl/heartbeat.cpp db/repl/rs_config.cpp db/repl/rs_rollback.cpp db/repl/rs_sync.cpp db/repl/rs_initialsync.cpp db/oplog.cpp db/repl_block.cpp db/btreecursor.cpp db/cloner.cpp db/namespace.cpp db/cap.cpp db/matcher_covered.cpp db/dbeval.cpp db/dbwebserver.cpp db/dbhelpers.cpp db/instance.cpp db/client.cpp db/database.cpp db/pdfile.cpp db/cursor.cpp db/security_commands.cpp db/security.cpp util/miniwebserver.cpp db/storage.cpp db/queryoptimizer.cpp db/extsort.cpp db/mr.cpp s/d_util.cpp db/cmdline.cpp" )
+serverOnlyFiles = Split( "db/query.cpp db/update.cpp db/introspect.cpp db/btree.cpp db/clientcursor.cpp db/tests.cpp db/repl.cpp db/repl/rs.cpp db/repl/consensus.cpp db/repl/rs_initiate.cpp db/repl/replset_commands.cpp db/repl/manager.cpp db/repl/health.cpp db/repl/heartbeat.cpp db/repl/rs_config.cpp db/repl/rs_rollback.cpp db/repl/rs_sync.cpp db/repl/rs_initialsync.cpp db/oplog.cpp db/repl_block.cpp db/btreecursor.cpp db/cloner.cpp db/namespace.cpp db/cap.cpp db/matcher_covered.cpp db/dbeval.cpp db/restapi.cpp db/dbhelpers.cpp db/instance.cpp db/client.cpp db/database.cpp db/pdfile.cpp db/cursor.cpp db/security_commands.cpp db/security.cpp db/storage.cpp db/queryoptimizer.cpp db/extsort.cpp db/mr.cpp s/d_util.cpp db/cmdline.cpp" )
 
 serverOnlyFiles += [ "db/index.cpp" ] + Glob( "db/geo/*.cpp" )
 
@@ -455,7 +456,7 @@ else:
 
 coreServerFiles += scriptingFiles
 
-coreShardFiles = [ "s/config.cpp" , "s/chunk.cpp" , "s/shard.cpp" , "s/shardkey.cpp" ]
+coreShardFiles = [ "s/config.cpp" , "s/grid.cpp" , "s/chunk.cpp" , "s/shard.cpp" , "s/shardkey.cpp" ]
 shardServerFiles = coreShardFiles + Glob( "s/strategy*.cpp" ) + [ "s/commands_admin.cpp" , "s/commands_public.cpp" , "s/request.cpp" ,  "s/cursors.cpp" ,  "s/server.cpp" , "s/config_migrate.cpp" , "s/s_only.cpp" , "s/stats.cpp" , "s/balance.cpp" , "s/balancer_policy.cpp" , "db/cmdline.cpp" ]
 serverOnlyFiles += coreShardFiles + [ "s/d_logic.cpp" , "s/d_writeback.cpp" , "s/d_migrate.cpp" , "s/d_state.cpp" , "s/d_split.cpp" , "client/distlock_test.cpp" ]
 
@@ -741,11 +742,13 @@ else:
 
 if nix:
     env.Append( CPPFLAGS="-fPIC -fno-strict-aliasing -ggdb -pthread -Wall -Wsign-compare -Wno-unknown-pragmas -Winvalid-pch" )
+    if not solaris:
+        env.Append( CPPFLAGS=" -Werror " )
     env.Append( CXXFLAGS=" -Wnon-virtual-dtor " )
     env.Append( LINKFLAGS=" -fPIC -pthread -rdynamic" )
     env.Append( LIBS=[] )
 
-    if GetOption( "sharedclient" ):
+    if linux and GetOption( "sharedclient" ):
         env.Append( LINKFLAGS=" -Wl,--as-needed -Wl,-zdefs " )
 
     if debugBuild:
@@ -1407,6 +1410,8 @@ def getSystemInstallName():
     n = platform + "-" + processor
     if static:
         n += "-static"
+    if GetOption("nostrip"):
+        n += "-debugsymbols"
     if nix and os.uname()[2].startswith( "8." ):
         n += "-tiger"
         
@@ -1653,13 +1658,17 @@ if installDir[-1] != "/":
 def build_and_test_client(env, target, source):
     from subprocess import call
 
-    call("scons", cwd=installDir)
+    if GetOption("extrapath") is not None:
+        scons_command = ["scons", "--extrapath=" + GetOption("extrapath")]
+    else:
+        scons_command = ["scons"]
+
+    call(scons_command + ["libmongoclient.a", "clientTests"], cwd=installDir)
+
     return bool(call(["python", "buildscripts/smoke.py",
                       "--test-path", installDir, "smokeClient"]))
 env.Alias("clientBuild", [mongod, installDir], [build_and_test_client])
 env.AlwaysBuild("clientBuild")
-env.Alias("clientDist", ["clientBuild", "dist"], [])
-env.AlwaysBuild("clientDist")
 
 def clean_old_dist_builds(env, target, source):
     prefix = "mongodb-%s-%s" % (platform, processor)

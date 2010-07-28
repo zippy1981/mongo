@@ -37,6 +37,7 @@
 #include "../util/concurrency/task.h"
 #include "../util/version.h"
 #include "client.h"
+#include "dbwebserver.h"
 
 #if defined(_WIN32)
 # include "../util/ntservice.h"
@@ -52,7 +53,6 @@ namespace mongo {
     /* only off if --nohints */
     extern bool useHints;
 
-    extern string bind_ip;
     extern char *appsrvPath;
     extern int diagLogging;
     extern int lenForNewNsFiles;
@@ -68,7 +68,7 @@ namespace mongo {
 
     void setupSignals();
     void closeAllSockets();
-    void startReplSets();
+    void startReplSets(ReplSetCmdline*);
     void startReplication();
     void pairWith(const char *remoteEnd, const char *arb);
     void exitCleanly( ExitCode code );
@@ -96,40 +96,36 @@ namespace mongo {
 
     QueryResult* emptyMoreResult(long long);
 
-    MessagingPort *connGrab = 0;
-    void connThread();
+    void connThread( MessagingPort * p );
 
     class OurListener : public Listener {
     public:
         OurListener(const string &ip, int p) : Listener(ip, p) { }
         virtual void accepted(MessagingPort *mp) {
-            assert( connGrab == 0 );
+
             if ( ! connTicketHolder.tryAcquire() ){
                 log() << "connection refused because too many open connections" << endl;
                 // TODO: would be nice if we notified them...
                 mp->shutdown();
+                delete mp;
                 return;
             }
-            connGrab = mp;
+
             try {
-                boost::thread thr(connThread);
-                while ( connGrab )
-                    sleepmillis(1);
+                boost::thread thr(boost::bind(&connThread,mp));
             }
             catch ( boost::thread_resource_error& ){
                 log() << "can't create new thread, closing connection" << endl;
                 mp->shutdown();
-                connGrab = 0;
+                delete mp;
             }
             catch ( ... ){
                 log() << "unkonwn exception starting connThread" << endl;
                 mp->shutdown();
-                connGrab = 0;
+                delete mp;
             }
         }
     };
-
-    void webServerThread();
 
 /* todo: make this a real test.  the stuff in dbtests/ seem to do all dbdirectclient which exhaust doesn't support yet. */
 // QueryOption_Exhaust
@@ -174,7 +170,7 @@ namespace mongo {
     void listen(int port) {
         //testTheDb();
         log() << "waiting for connections on port " << port << endl;
-        OurListener l(bind_ip, port);
+        OurListener l(cmdLine.bind_ip, port);
         l.setAsTimeTracker();
         startReplication();
         if ( !noHttpInterface )
@@ -208,7 +204,7 @@ namespace mongo {
        app server will open a pool of threads.
        todo: one day, asio...
     */
-    void connThread()
+    void connThread( MessagingPort * inPort )
     {
         TicketHolderReleaser connTicketReleaser( &connTicketHolder );
         Client::initThread("conn");
@@ -217,8 +213,7 @@ namespace mongo {
         LastError *le = new LastError();
         lastError.reset(le);
 
-        auto_ptr<MessagingPort> dbMsgPort( connGrab );
-        connGrab = 0;
+        auto_ptr<MessagingPort> dbMsgPort( inPort );
         Client& c = cc();
 
         try {
@@ -585,7 +580,8 @@ sendmore:
 
         if( !cmdLine.replSet.empty() ) {
             replSet = true;
-            boost::thread t(startReplSets);
+            ReplSetCmdline *replSetCmdline = new ReplSetCmdline(cmdLine.replSet);
+            boost::thread t( boost::bind( &startReplSets, replSetCmdline) );
         }
 
         listen(listenPort);
@@ -671,8 +667,6 @@ int main(int argc, char* argv[], char *envp[] )
     CmdLine::addGlobalOptions( general_options , hidden_options );
 
     general_options.add_options()
-        ("bind_ip", po::value<string>(&bind_ip),
-         "comma separated list of ip addresses to listen on - all local ips by default")
         ("dbpath", po::value<string>()->default_value("/data/db/"), "directory for datafiles")
         ("directoryperdb", "each database will be stored in a separate directory")
         ("repairpath", po::value<string>() , "root directory for repair files - defaults to dbpath" )

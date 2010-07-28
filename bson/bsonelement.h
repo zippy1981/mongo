@@ -19,6 +19,7 @@
 
 #include <vector>
 #include <string.h>
+#include "util/builder.h"
 
 namespace bson {
     typedef mongo::BSONElement be;
@@ -86,8 +87,9 @@ public:
     bool ok() const { return !eoo(); }
 
     string toString( bool includeFieldName = true, bool full=false) const;
-    operator string() const { return toString(); }
+    void toString(StringBuilder& s, bool includeFieldName = true, bool full=false) const;
     string jsonString( JsonStringFormat format, bool includeFieldNames = true, int pretty = 0 ) const;
+    operator string() const { return toString(); }
 
     /** Returns the type of the element */
     BSONType type() const { return (BSONType) *data; }
@@ -390,7 +392,7 @@ private:
     friend class BSONObj;
     const BSONElement& chk(int t) const { 
         if ( t != type() ){
-            stringstream ss;
+            StringBuilder ss;
             ss << "wrong type for BSONElement (" << fieldName() << ") " << type() << " != " << t;
             uasserted(13111, ss.str() );
         }
