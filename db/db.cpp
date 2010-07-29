@@ -779,7 +779,7 @@ int main(int argc, char* argv[], char *envp[] )
         
         string error_message = arg_error_check(argc, argv);
         if (error_message != "") {
-            cout << error_message << endl << endl;
+            cerr << error_message << endl << endl;
             show_help_text(visible_options);
             return 0;
         }
@@ -874,7 +874,7 @@ int main(int argc, char* argv[], char *envp[] )
         }
         if (params.count("install")) {
             if ( ! params.count( "logpath" ) ){
-                cout << "--install has to be used with --logpath" << endl;
+                cerr << "--install has to be used with --logpath" << endl;
                 ::exit(-1);
             }
 
@@ -885,7 +885,7 @@ int main(int argc, char* argv[], char *envp[] )
         }
         if (params.count("reinstall")) {
             if ( ! params.count( "logpath" ) ){
-                cout << "--reinstall has to be used with --logpath" << endl;
+                cerr << "--reinstall has to be used with --logpath" << endl;
                 ::exit(-1);
             }
 
@@ -924,7 +924,7 @@ int main(int argc, char* argv[], char *envp[] )
             cmdLine.only = params["only"].as<string>().c_str();
         }
         if (params.count("pairwith")) {
-            cout << "***********************************\n"
+            cerr << "***********************************\n"
                  << "WARNING WARNING WARNING\n"
                  << " replica pairs are deprecated\n"
                  << " see: http://www.mongodb.org/display/DOCS/Replica+Pairs \n" 
@@ -1030,8 +1030,8 @@ int main(int argc, char* argv[], char *envp[] )
                 const char *m;
 
                 if (command.size() < 3) {
-                    cout << "Too few parameters to 'msg' command" << endl;
-                    cout << visible_options << endl;
+                    cerr << "Too few parameters to 'msg' command" << endl;
+                    cerr << visible_options << endl;
                     return 0;
                 }
 
@@ -1042,8 +1042,8 @@ int main(int argc, char* argv[], char *envp[] )
             }
             if (command[0].compare("run") == 0) {
                 if (command.size() > 1) {
-                    cout << "Too many parameters to 'run' command" << endl;
-                    cout << visible_options << endl;
+                    cerr << "Too many parameters to 'run' command" << endl;
+                    cerr << visible_options << endl;
                     return 0;
                 }
 
@@ -1056,8 +1056,8 @@ int main(int argc, char* argv[], char *envp[] )
                 return 0;
             }
 
-            cout << "Invalid command: " << command[0] << endl;
-            cout << visible_options << endl;
+            cerr << "Invalid command: " << command[0] << endl;
+            cerr << visible_options << endl;
             return 0;
         }
 

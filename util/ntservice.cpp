@@ -82,7 +82,7 @@ namespace mongo {
 		std::basic_ostringstream< TCHAR > commandLineWide;
  		commandLineWide << commandLine.str().c_str();
 
-		cerr << "Creating service " << toUtf8String(serviceName) << "." << endl;
+		cout << "Creating service " << toUtf8String(serviceName) << "." << endl;
 
 		// create new service
 		schService = ::CreateService( schSCManager, serviceName.c_str(), displayName.c_str(),
@@ -96,8 +96,8 @@ namespace mongo {
             return false;
         }
 
-		cerr << "Service creation successful." << endl;
-		cerr << "Service can be started from the command line via 'net start \"" << toUtf8String(serviceName) << "\"'." << endl;
+		cout << "Service creation successful." << endl;
+		cout << "Service can be started from the command line via 'net start \"" << toUtf8String(serviceName) << "\"'." << endl;
 
 		bool serviceInstalled;
 
@@ -111,7 +111,7 @@ namespace mongo {
 				actualServiceUser = serviceUser;
 			}
 
-			cerr << "Setting service login credentials. User: " << toUtf8String(actualServiceUser) << endl;
+			cout << "Setting service login credentials. User: " << toUtf8String(actualServiceUser) << endl;
 			serviceInstalled = ::ChangeServiceConfig( schService, SERVICE_NO_CHANGE, SERVICE_NO_CHANGE, SERVICE_NO_CHANGE, NULL, NULL, NULL, NULL, actualServiceUser.c_str(), servicePassword.c_str(), NULL );
 			if ( !serviceInstalled ) {
 				cerr << "Setting service login failed. Service has 'LocalService' permissions." << endl;
@@ -165,7 +165,7 @@ namespace mongo {
 		
 		// stop service if its running
 		if ( ::ControlService( schService, SERVICE_CONTROL_STOP, &serviceStatus ) ) {
-			cerr << "Service " << toUtf8String(serviceName) << " is currently running. Stopping service." << endl;
+			cout << "Service " << toUtf8String(serviceName) << " is currently running. Stopping service." << endl;
 			while ( ::QueryServiceStatus( schService, &serviceStatus ) ) {
 				if ( serviceStatus.dwCurrentState == SERVICE_STOP_PENDING )
 				{
@@ -173,17 +173,17 @@ namespace mongo {
 				}
 				else { break; }
 			}
-			cerr << "Service stopped." << endl;
+			cout << "Service stopped." << endl;
 		}
 
-		cerr << "Deleting service " << toUtf8String(serviceName) << "." << endl;
+		cout << "Deleting service " << toUtf8String(serviceName) << "." << endl;
 		bool serviceRemoved = ::DeleteService( schService );
 		
 		::CloseServiceHandle( schService );
 		::CloseServiceHandle( schSCManager );
 
 		if (serviceRemoved) {
-			cerr << "Service deleted successfully." << endl;
+			cout << "Service deleted successfully." << endl;
 		}
 		else {
 			cerr << "Failed to delete service." << endl;
