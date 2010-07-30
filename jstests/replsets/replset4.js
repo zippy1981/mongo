@@ -1,7 +1,7 @@
 doTest = function( signal ) {
 
     // Test orphaned master steps down
-    var replTest = new ReplSetTest( {name: 'testSet', nodes: 3, bridged: true} );
+    var replTest = new ReplSetTest( {name: 'testSet', nodes: 3} );
 
     replTest.startSet();
     replTest.initiate();
@@ -26,4 +26,4 @@ doTest = function( signal ) {
     replTest.stopSet( signal );
 }
 
-// doTest( 15 );
+doTest( 15 );

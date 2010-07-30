@@ -3,25 +3,31 @@
 
 doTest = function( signal ) {
 
-    var replTest = new ReplSetTest( {name: 'testSet', nodes: 3} );
+    var replTest = new ReplSetTest( {name: 'unicomplex', nodes: 3} );
     var nodes = replTest.nodeList();
 
-    replTest.startSet();
-    replTest.node[0].initiate({"_id" : "unicomplex", 
+    print(tojson(nodes));
+
+    var conns = replTest.startSet();
+    var r = replTest.initiate({"_id" : "unicomplex", 
                 "members" : [
                              {"_id" : 0, "host" : nodes[0], "arbiterOnly" : true}, 
                              {"_id" : 1, "host" : nodes[1]}, 
                              {"_id" : 2, "host" : nodes[2]}]});
 
-    // one of these should be master
+    // Make sure we have a master
+    // Neither this
+    var master = replTest.getMaster();
 
-    var m2 = replTest.nodes[1].runCommand({ismaster:1})
-    var m3 = replTest.nodes[2].runCommand({ismaster:1})
-
-    // but they aren't! FAIL
-    assert(m2.ismaster || m3.ismaster, 'a master exists');
+    // Make sure we have an arbiter
+    // Nor this will succeed
+    assert.soon(function() {
+        res = conns[0].getDB("admin").runCommand({replSetGetStatus: 1});
+        printjson(res);
+        return res.myState == 7;
+    }, "Aribiter failed to initialize.");
 
     replTest.stopSet( signal );
 }
 
-//doTest( 15 );
+// doTest( 15 );
