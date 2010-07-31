@@ -205,7 +205,7 @@ namespace mongo {
             }
         }
         DEV log() << "replSet dev we are freshest of up nodes, nok:" << nok << " nTies:" << nTies << rsLog; 
-        assert( ord == theReplSet->lastOpTimeWritten );
+        assert( ord <= theReplSet->lastOpTimeWritten ); // <= as this may change while we are working...
         return true;
     }
 
@@ -307,7 +307,7 @@ namespace mongo {
                 }
                 else {
                     /* succeeded. */
-                    log() << "replSet election succeeded, assuming primary role" << rsLog;
+                    log(1) << "replSet election succeeded, assuming primary role" << rsLog;
                     success = true;
                     rs.assumePrimary();
                 } 

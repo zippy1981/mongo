@@ -36,7 +36,7 @@ namespace mongo {
          * gets the config the db.
          * will return an empty DBConfig if not in db already
          */
-        DBConfigPtr getDBConfig( string ns , bool create=true );
+        DBConfigPtr getDBConfig( string ns , bool create=true , const string& shardNameHint="" );
         
         /**
          * removes db entry.
@@ -93,6 +93,11 @@ namespace mongo {
          * 10000 shard 
          */
         bool _getNewShardName( string* name ) const;
+
+        /**
+         * @return whether a give dbname is used for shard "local" databases (e.g., admin or local)
+         */
+        static bool _isSpecialLocalDB( const string& dbName );
 
     };
 
