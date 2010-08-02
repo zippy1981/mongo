@@ -213,6 +213,10 @@
 				>
 			</File>
 			<File
+				RelativePath=".\grid.cpp"
+				>
+			</File>
+			<File
 				RelativePath="..\db\queryutil.cpp"
 				>
 			</File>
@@ -268,6 +272,10 @@
 			>
 			<File
 				RelativePath=".\balancer_policy.h"
+				>
+			</File>
+			<File
+				RelativePath=".\grid.h"
 				>
 			</File>
 			<File
@@ -889,7 +897,15 @@
 				>
 			</File>
 			<File
+				RelativePath="..\db\dbwebserver.cpp"
+				>
+			</File>
+			<File
 				RelativePath="..\util\debug_util.cpp"
+				>
+			</File>
+			<File
+				RelativePath="..\client\distlock.cpp"
 				>
 			</File>
 			<File
@@ -914,6 +930,10 @@
 			</File>
 			<File
 				RelativePath="..\db\lasterror.cpp"
+				>
+			</File>
+			<File
+				RelativePath="..\util\log.cpp"
 				>
 			</File>
 			<File
@@ -961,6 +981,10 @@
 				>
 			</File>
 			<File
+				RelativePath="..\util\miniwebserver.cpp"
+				>
+			</File>
+			<File
 				RelativePath="..\util\mmap.cpp"
 				>
 			</File>
@@ -997,6 +1021,10 @@
 				>
 			</File>
 			<File
+				RelativePath="..\util\processinfo.cpp"
+				>
+			</File>
+			<File
 				RelativePath="..\util\processinfo_win32.cpp"
 				>
 			</File>
@@ -1005,11 +1033,11 @@
 				>
 			</File>
 			<File
-				RelativePath="..\client\syncclusterconnection.cpp"
+				RelativePath="..\util\stringutils.cpp"
 				>
 			</File>
 			<File
-				RelativePath="..\util\thread_pool.cpp"
+				RelativePath="..\client\syncclusterconnection.cpp"
 				>
 			</File>
 			<File
@@ -1018,6 +1046,14 @@
 			</File>
 			<File
 				RelativePath="..\util\util.cpp"
+				>
+			</File>
+			<File
+				RelativePath="..\util\concurrency\vars.cpp"
+				>
+			</File>
+			<File
+				RelativePath="..\util\version.cpp"
 				>
 			</File>
 		</Filter>

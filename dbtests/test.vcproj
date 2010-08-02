@@ -756,6 +756,14 @@
 				>
 			</File>
 			<File
+				RelativePath="..\client\distlock.cpp"
+				>
+			</File>
+			<File
+				RelativePath="..\client\distlock.h"
+				>
+			</File>
+			<File
 				RelativePath="..\client\model.h"
 				>
 			</File>
@@ -792,6 +800,10 @@
 				Filter="cpp;c;cc;cxx;def;odl;idl;hpj;bat;asm;asmx"
 				UniqueIdentifier="{4FC737F1-C7A5-4376-A066-2A32D752A2FF}"
 				>
+				<File
+					RelativePath="..\db\cap.cpp"
+					>
+				</File>
 				<File
 					RelativePath="..\db\client.cpp"
 					>
@@ -842,10 +854,6 @@
 				</File>
 				<File
 					RelativePath="..\db\index.cpp"
-					>
-				</File>
-				<File
-					RelativePath="..\db\index_geo2d.cpp"
 					>
 				</File>
 				<File
@@ -906,6 +914,10 @@
 				</File>
 				<File
 					RelativePath="..\db\repl.cpp"
+					>
+				</File>
+				<File
+					RelativePath="..\db\restapi.cpp"
 					>
 				</File>
 				<File
@@ -1122,11 +1134,43 @@
 				>
 			</File>
 			<File
+				RelativePath="..\util\processinfo.cpp"
+				>
+			</File>
+			<File
+				RelativePath="..\util\processinfo.h"
+				>
+			</File>
+			<File
 				RelativePath="..\util\sock.h"
 				>
 			</File>
 			<File
+				RelativePath="..\util\stringutils.cpp"
+				>
+			</File>
+			<File
+				RelativePath="..\util\stringutils.h"
+				>
+			</File>
+			<File
+				RelativePath="..\util\text.cpp"
+				>
+			</File>
+			<File
+				RelativePath="..\util\text.h"
+				>
+			</File>
+			<File
 				RelativePath="..\util\unittest.h"
+				>
+			</File>
+			<File
+				RelativePath="..\util\version.cpp"
+				>
+			</File>
+			<File
+				RelativePath="..\util\version.h"
 				>
 			</File>
 			<Filter
@@ -1146,6 +1190,10 @@
 				</File>
 				<File
 					RelativePath="..\util\httpclient.cpp"
+					>
+				</File>
+				<File
+					RelativePath="..\util\log.cpp"
 					>
 				</File>
 				<File
@@ -1202,10 +1250,6 @@
 					>
 				</File>
 				<File
-					RelativePath="..\util\thread_pool.cpp"
-					>
-				</File>
-				<File
 					RelativePath="..\util\util.cpp"
 					>
 				</File>
@@ -1230,6 +1274,14 @@
 					>
 				</File>
 				<File
+					RelativePath="..\util\concurrency\thread_pool.cpp"
+					>
+				</File>
+				<File
+					RelativePath="..\util\concurrency\thread_pool.h"
+					>
+				</File>
+				<File
 					RelativePath="..\util\concurrency\value.h"
 					>
 				</File>
@@ -1238,12 +1290,52 @@
 					>
 				</File>
 			</Filter>
+			<Filter
+				Name="stats"
+				>
+				<File
+					RelativePath="..\db\stats\counters.cpp"
+					>
+				</File>
+				<File
+					RelativePath="..\db\stats\snapshots.cpp"
+					>
+				</File>
+				<File
+					RelativePath="..\db\stats\top.cpp"
+					>
+				</File>
+			</Filter>
 		</Filter>
 		<Filter
 			Name="shard"
 			>
 			<File
+				RelativePath="..\s\chunk.cpp"
+				>
+			</File>
+			<File
+				RelativePath="..\s\chunk.h"
+				>
+			</File>
+			<File
+				RelativePath="..\s\config.cpp"
+				>
+			</File>
+			<File
+				RelativePath="..\s\config.h"
+				>
+			</File>
+			<File
 				RelativePath="..\s\d_logic.cpp"
+				>
+			</File>
+			<File
+				RelativePath="..\s\d_migrate.cpp"
+				>
+			</File>
+			<File
+				RelativePath="..\s\d_state.cpp"
 				>
 			</File>
 			<File
@@ -1251,7 +1343,35 @@
 				>
 			</File>
 			<File
+				RelativePath="..\s\d_writeback.cpp"
+				>
+			</File>
+			<File
+				RelativePath="..\s\grid.cpp"
+				>
+			</File>
+			<File
+				RelativePath="..\s\grid.h"
+				>
+			</File>
+			<File
+				RelativePath="..\s\shard.cpp"
+				>
+			</File>
+			<File
+				RelativePath="..\s\shard.h"
+				>
+			</File>
+			<File
 				RelativePath="..\s\shardconnection.cpp"
+				>
+			</File>
+			<File
+				RelativePath="..\s\shardkey.cpp"
+				>
+			</File>
+			<File
+				RelativePath="..\s\shardkey.h"
 				>
 			</File>
 		</Filter>
@@ -1380,22 +1500,6 @@
 			</File>
 		</Filter>
 		<Filter
-			Name="stats"
-			>
-			<File
-				RelativePath="..\db\stats\counters.cpp"
-				>
-			</File>
-			<File
-				RelativePath="..\db\stats\snapshots.cpp"
-				>
-			</File>
-			<File
-				RelativePath="..\db\stats\top.cpp"
-				>
-			</File>
-		</Filter>
-		<Filter
 			Name="replsets"
 			>
 			<File
@@ -1415,11 +1519,15 @@
 				>
 			</File>
 			<File
-				RelativePath="..\db\repl\replset.cpp"
+				RelativePath="..\db\repl\replset_commands.cpp"
 				>
 			</File>
 			<File
-				RelativePath="..\db\repl\replset_commands.cpp"
+				RelativePath="..\db\repl\rs.cpp"
+				>
+			</File>
+			<File
+				RelativePath="..\db\repl\rs.h"
 				>
 			</File>
 			<File
@@ -1427,7 +1535,19 @@
 				>
 			</File>
 			<File
+				RelativePath="..\db\repl\rs_initialsync.cpp"
+				>
+			</File>
+			<File
 				RelativePath="..\db\repl\rs_initiate.cpp"
+				>
+			</File>
+			<File
+				RelativePath="..\db\repl\rs_rollback.cpp"
+				>
+			</File>
+			<File
+				RelativePath="..\db\repl\rs_sync.cpp"
 				>
 			</File>
 		</Filter>
