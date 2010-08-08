@@ -370,6 +370,22 @@
     <ClCompile Include="repl\rs_sync.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="..\jstests\replsets\replset1.js" />
+    <None Include="..\jstests\replsets\replset2.js" />
+    <None Include="..\jstests\replsets\replset3.js" />
+    <None Include="..\jstests\replsets\replset4.js" />
+    <None Include="..\jstests\replsets\replset5.js" />
+    <None Include="..\jstests\replsets\replsetadd.js" />
+    <None Include="..\jstests\replsets\replsetarb1.js" />
+    <None Include="..\jstests\replsets\replsetarb2.js" />
+    <None Include="..\jstests\replsets\replsetprio1.js" />
+    <None Include="..\jstests\replsets\replsetrestart1.js" />
+    <None Include="..\jstests\replsets\replsetrestart2.js" />
+    <None Include="..\jstests\replsets\replset_remove_node.js" />
+    <None Include="..\jstests\replsets\rollback.js" />
+    <None Include="..\jstests\replsets\rollback2.js" />
+    <None Include="..\jstests\replsets\sync1.js" />
+    <None Include="..\jstests\replsets\twosets.js" />
     <None Include="..\SConstruct" />
   </ItemGroup>
   <ItemGroup>

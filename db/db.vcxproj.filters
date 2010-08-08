@@ -826,4 +826,53 @@
       <Filter>bson</Filter>
     </ClInclude>
   </ItemGroup>
+    <Filter Include="replSets\testing">
+    </None>
+    <None Include="..\jstests\replsets\replset_remove_node.js">
+      <Filter>replSets\testing</Filter>
+    </None>
+    <None Include="..\jstests\replsets\replset1.js">
+      <Filter>replSets\testing</Filter>
+    </None>
+    <None Include="..\jstests\replsets\replset2.js">
+      <Filter>replSets\testing</Filter>
+    </None>
+    <None Include="..\jstests\replsets\replset3.js">
+      <Filter>replSets\testing</Filter>
+    </None>
+    <None Include="..\jstests\replsets\replset4.js">
+      <Filter>replSets\testing</Filter>
+    </None>
+    <None Include="..\jstests\replsets\replset5.js">
+      <Filter>replSets\testing</Filter>
+    </None>
+    <None Include="..\jstests\replsets\replsetadd.js">
+      <Filter>replSets\testing</Filter>
+    </None>
+    <None Include="..\jstests\replsets\replsetarb1.js">
+      <Filter>replSets\testing</Filter>
+    </None>
+    <None Include="..\jstests\replsets\replsetarb2.js">
+      <Filter>replSets\testing</Filter>
+    </None>
+    <None Include="..\jstests\replsets\replsetprio1.js">
+      <Filter>replSets\testing</Filter>
+    </None>
+    <None Include="..\jstests\replsets\replsetrestart1.js">
+      <Filter>replSets\testing</Filter>
+    </None>
+    <None Include="..\jstests\replsets\replsetrestart2.js">
+      <Filter>replSets\testing</Filter>
+    </None>
+    <None Include="..\jstests\replsets\rollback.js">
+      <Filter>replSets\testing</Filter>
+    </None>
+    <None Include="..\jstests\replsets\rollback2.js">
+      <Filter>replSets\testing</Filter>
+    </None>
+    <None Include="..\jstests\replsets\sync1.js">
+      <Filter>replSets\testing</Filter>
+    </None>
+    <None Include="..\jstests\replsets\twosets.js">
+      <Filter>replSets\testing</Filter>
 </Project>
