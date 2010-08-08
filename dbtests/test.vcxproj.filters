@@ -2,56 +2,53 @@
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
     <Filter Include="misc and third party">
-      <UniqueIdentifier>{17c97725-06a4-41a6-bc1c-f0e05eada682}</UniqueIdentifier>
+      <UniqueIdentifier>{e97780de-21e0-4d9c-b6ba-5de0ae0af3f3}</UniqueIdentifier>
     </Filter>
     <Filter Include="misc and third party\pcre">
-      <UniqueIdentifier>{0a50fb63-4ac3-4e30-a9d4-b0841878ee73}</UniqueIdentifier>
+      <UniqueIdentifier>{8791656e-0d6f-4d77-956c-0c5e171eecbe}</UniqueIdentifier>
     </Filter>
     <Filter Include="storage related">
-      <UniqueIdentifier>{eb2684bf-ca8d-4162-9313-56a81233c471}</UniqueIdentifier>
+      <UniqueIdentifier>{bfbd1387-0d58-49c3-9114-6609a532fab6}</UniqueIdentifier>
     </Filter>
     <Filter Include="client">
-      <UniqueIdentifier>{45dab36c-864e-45de-bb8e-cf1d87a2c4f6}</UniqueIdentifier>
+      <UniqueIdentifier>{30843961-19b5-47f7-aeba-80bd6c799ca2}</UniqueIdentifier>
     </Filter>
     <Filter Include="db">
-      <UniqueIdentifier>{69e233b0-5354-4612-8474-d4e4faaee607}</UniqueIdentifier>
+      <UniqueIdentifier>{942e2803-8b74-487c-a075-b27909a56b1b}</UniqueIdentifier>
     </Filter>
     <Filter Include="db\cpp">
       <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
       <Extensions>cpp;c;cc;cxx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
     </Filter>
     <Filter Include="db\h">
-      <UniqueIdentifier>{f86d2fc9-fb76-40cf-943d-330feb945ff3}</UniqueIdentifier>
+      <UniqueIdentifier>{0f74480f-6836-4cca-a3a3-88de20edf4bc}</UniqueIdentifier>
     </Filter>
     <Filter Include="util">
-      <UniqueIdentifier>{0ec2e082-aace-46da-9898-a1a7b24d60b7}</UniqueIdentifier>
+      <UniqueIdentifier>{62b3ae36-32f5-4571-90ae-df22228cff77}</UniqueIdentifier>
     </Filter>
     <Filter Include="util\cpp">
-      <UniqueIdentifier>{12efa241-3593-4177-a0cb-1eb672491f49}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="shard">
-      <UniqueIdentifier>{3865c5a5-bdb1-4420-a3ae-5a6615d563d4}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="scripting">
-      <UniqueIdentifier>{28893dc5-8a18-429a-b5c9-2cf701d324da}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="dbtests">
-      <UniqueIdentifier>{bc08b47a-daa3-4894-b9af-ae88755838db}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="stats">
-      <UniqueIdentifier>{2b914dc3-a760-4397-a12b-73a0381fa71d}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="replsets">
-      <UniqueIdentifier>{9320a670-3b28-471a-bf92-6c8d881a37a4}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="btree related">
-      <UniqueIdentifier>{4fff2dbf-30c4-4295-8db8-d513c1e36220}</UniqueIdentifier>
+      <UniqueIdentifier>{aba73157-5c86-4923-bdc4-57ddd294f796}</UniqueIdentifier>
     </Filter>
     <Filter Include="util\concurrency">
-      <UniqueIdentifier>{d499fdba-b256-4b12-af20-cdd1ae1addff}</UniqueIdentifier>
+      <UniqueIdentifier>{4389afd3-4bcb-44a4-9ec3-d48e6c70099e}</UniqueIdentifier>
     </Filter>
-    <Filter Include="util\h">
-      <UniqueIdentifier>{353b6f01-1cab-4156-a576-bc75ab204776}</UniqueIdentifier>
+    <Filter Include="util\stats">
+      <UniqueIdentifier>{0c0fdb34-6d7f-4200-976c-69699804bc77}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="shard">
+      <UniqueIdentifier>{0e303168-c178-4415-952d-3cf481ee71ed}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="scripting">
+      <UniqueIdentifier>{4d216282-51b2-4820-a25f-b3af317c3818}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="dbtests">
+      <UniqueIdentifier>{95b6c204-0f47-4c24-8371-8508e34da5b5}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="replsets">
+      <UniqueIdentifier>{c6a9b198-f6d5-4758-b9cd-aee1b9b9ff91}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="btree related">
+      <UniqueIdentifier>{7205a7b0-be1b-4025-8aa0-ec0fd8f68974}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>
@@ -92,6 +89,9 @@
       <Filter>client</Filter>
     </ClInclude>
     <ClInclude Include="..\client\dbclient.h">
+      <Filter>client</Filter>
+    </ClInclude>
+    <ClInclude Include="..\client\distlock.h">
       <Filter>client</Filter>
     </ClInclude>
     <ClInclude Include="..\client\model.h">
@@ -187,69 +187,101 @@
     <ClInclude Include="..\db\security.h">
       <Filter>db\h</Filter>
     </ClInclude>
-    <ClInclude Include="..\db\btree.h">
-      <Filter>btree related</Filter>
+    <ClInclude Include="..\util\builder.h">
+      <Filter>util</Filter>
+    </ClInclude>
+    <ClInclude Include="..\util\file.h">
+      <Filter>util</Filter>
+    </ClInclude>
+    <ClInclude Include="..\util\goodies.h">
+      <Filter>util</Filter>
+    </ClInclude>
+    <ClInclude Include="..\util\hashtab.h">
+      <Filter>util</Filter>
+    </ClInclude>
+    <ClInclude Include="..\db\lasterror.h">
+      <Filter>util</Filter>
+    </ClInclude>
+    <ClInclude Include="..\util\log.h">
+      <Filter>util</Filter>
+    </ClInclude>
+    <ClInclude Include="..\util\lruishmap.h">
+      <Filter>util</Filter>
+    </ClInclude>
+    <ClInclude Include="..\util\md5.h">
+      <Filter>util</Filter>
+    </ClInclude>
+    <ClInclude Include="..\util\md5.hpp">
+      <Filter>util</Filter>
+    </ClInclude>
+    <ClInclude Include="..\util\miniwebserver.h">
+      <Filter>util</Filter>
+    </ClInclude>
+    <ClInclude Include="..\util\mmap.h">
+      <Filter>util</Filter>
+    </ClInclude>
+    <ClInclude Include="..\util\processinfo.h">
+      <Filter>util</Filter>
+    </ClInclude>
+    <ClInclude Include="..\util\sock.h">
+      <Filter>util</Filter>
+    </ClInclude>
+    <ClInclude Include="..\util\stringutils.h">
+      <Filter>util</Filter>
+    </ClInclude>
+    <ClInclude Include="..\util\text.h">
+      <Filter>util</Filter>
+    </ClInclude>
+    <ClInclude Include="..\util\unittest.h">
+      <Filter>util</Filter>
+    </ClInclude>
+    <ClInclude Include="..\util\version.h">
+      <Filter>util</Filter>
     </ClInclude>
     <ClInclude Include="..\util\concurrency\list.h">
       <Filter>util\concurrency</Filter>
     </ClInclude>
-    <ClInclude Include="..\util\concurrency\value.h">
+    <ClInclude Include="..\util\concurrency\msg.h">
       <Filter>util\concurrency</Filter>
     </ClInclude>
     <ClInclude Include="..\util\concurrency\task.h">
       <Filter>util\concurrency</Filter>
     </ClInclude>
-    <ClInclude Include="..\util\builder.h">
-      <Filter>util\h</Filter>
+    <ClInclude Include="..\util\concurrency\thread_pool.h">
+      <Filter>util\concurrency</Filter>
     </ClInclude>
-    <ClInclude Include="..\util\unittest.h">
-      <Filter>util\h</Filter>
+    <ClInclude Include="..\util\concurrency\value.h">
+      <Filter>util\concurrency</Filter>
     </ClInclude>
-    <ClInclude Include="..\util\file.h">
-      <Filter>util\h</Filter>
+    <ClInclude Include="..\s\chunk.h">
+      <Filter>shard</Filter>
     </ClInclude>
-    <ClInclude Include="..\util\goodies.h">
-      <Filter>util\h</Filter>
+    <ClInclude Include="..\s\config.h">
+      <Filter>shard</Filter>
     </ClInclude>
-    <ClInclude Include="..\util\hashtab.h">
-      <Filter>util\h</Filter>
+    <ClInclude Include="..\s\grid.h">
+      <Filter>shard</Filter>
     </ClInclude>
-    <ClInclude Include="..\db\lasterror.h">
-      <Filter>util\h</Filter>
+    <ClInclude Include="..\s\shard.h">
+      <Filter>shard</Filter>
     </ClInclude>
-    <ClInclude Include="..\util\log.h">
-      <Filter>util\h</Filter>
+    <ClInclude Include="..\s\shardkey.h">
+      <Filter>shard</Filter>
     </ClInclude>
-    <ClInclude Include="..\util\lruishmap.h">
-      <Filter>util\h</Filter>
+    <ClInclude Include="..\db\repl\rs.h">
+      <Filter>replsets</Filter>
     </ClInclude>
-    <ClInclude Include="..\util\md5.h">
-      <Filter>util\h</Filter>
-    </ClInclude>
-    <ClInclude Include="..\util\md5.hpp">
-      <Filter>util\h</Filter>
-    </ClInclude>
-    <ClInclude Include="..\util\miniwebserver.h">
-      <Filter>util\h</Filter>
-    </ClInclude>
-    <ClInclude Include="..\util\mmap.h">
-      <Filter>util\h</Filter>
-    </ClInclude>
-    <ClInclude Include="..\util\sock.h">
-      <Filter>util\h</Filter>
+    <ClInclude Include="..\db\btree.h">
+      <Filter>btree related</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <Library Include="..\..\js\js64r.lib">
+    <ResourceCompile Include="..\db\db.rc">
       <Filter>misc and third party</Filter>
-    </Library>
-    <Library Include="..\..\js\js32d.lib">
-      <Filter>misc and third party</Filter>
-    </Library>
-    <Library Include="..\..\js\js32r.lib">
-      <Filter>misc and third party</Filter>
-    </Library>
-    <Library Include="..\..\js\js64d.lib">
+    </ResourceCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <Library Include="..\..\js\src\js.lib">
       <Filter>misc and third party</Filter>
     </Library>
   </ItemGroup>
@@ -338,11 +370,17 @@
     <ClCompile Include="..\client\dbclientcursor.cpp">
       <Filter>client</Filter>
     </ClCompile>
+    <ClCompile Include="..\client\distlock.cpp">
+      <Filter>client</Filter>
+    </ClCompile>
     <ClCompile Include="..\client\syncclusterconnection.cpp">
       <Filter>client</Filter>
     </ClCompile>
     <ClCompile Include="..\pch.cpp">
       <Filter>db</Filter>
+    </ClCompile>
+    <ClCompile Include="..\db\cap.cpp">
+      <Filter>db\cpp</Filter>
     </ClCompile>
     <ClCompile Include="..\db\client.cpp">
       <Filter>db\cpp</Filter>
@@ -428,6 +466,9 @@
     <ClCompile Include="..\db\repl.cpp">
       <Filter>db\cpp</Filter>
     </ClCompile>
+    <ClCompile Include="..\db\restapi.cpp">
+      <Filter>db\cpp</Filter>
+    </ClCompile>
     <ClCompile Include="..\db\security.cpp">
       <Filter>db\cpp</Filter>
     </ClCompile>
@@ -455,6 +496,21 @@
     <ClCompile Include="..\db\repl_block.cpp">
       <Filter>db\h</Filter>
     </ClCompile>
+    <ClCompile Include="..\util\debug_util.cpp">
+      <Filter>util</Filter>
+    </ClCompile>
+    <ClCompile Include="..\util\processinfo.cpp">
+      <Filter>util</Filter>
+    </ClCompile>
+    <ClCompile Include="..\util\stringutils.cpp">
+      <Filter>util</Filter>
+    </ClCompile>
+    <ClCompile Include="..\util\text.cpp">
+      <Filter>util</Filter>
+    </ClCompile>
+    <ClCompile Include="..\util\version.cpp">
+      <Filter>util</Filter>
+    </ClCompile>
     <ClCompile Include="..\util\assert_util.cpp">
       <Filter>util\cpp</Filter>
     </ClCompile>
@@ -465,6 +521,9 @@
       <Filter>util\cpp</Filter>
     </ClCompile>
     <ClCompile Include="..\util\httpclient.cpp">
+      <Filter>util\cpp</Filter>
+    </ClCompile>
+    <ClCompile Include="..\util\log.cpp">
       <Filter>util\cpp</Filter>
     </ClCompile>
     <ClCompile Include="..\util\md5.c">
@@ -497,7 +556,55 @@
     <ClCompile Include="..\util\util.cpp">
       <Filter>util\cpp</Filter>
     </ClCompile>
+    <ClCompile Include="..\util\concurrency\task.cpp">
+      <Filter>util\concurrency</Filter>
+    </ClCompile>
+    <ClCompile Include="..\util\concurrency\thread_pool.cpp">
+      <Filter>util\concurrency</Filter>
+    </ClCompile>
+    <ClCompile Include="..\util\concurrency\vars.cpp">
+      <Filter>util\concurrency</Filter>
+    </ClCompile>
+    <ClCompile Include="..\db\stats\counters.cpp">
+      <Filter>util\stats</Filter>
+    </ClCompile>
+    <ClCompile Include="..\db\stats\snapshots.cpp">
+      <Filter>util\stats</Filter>
+    </ClCompile>
+    <ClCompile Include="..\db\stats\top.cpp">
+      <Filter>util\stats</Filter>
+    </ClCompile>
+    <ClCompile Include="..\s\chunk.cpp">
+      <Filter>shard</Filter>
+    </ClCompile>
+    <ClCompile Include="..\s\config.cpp">
+      <Filter>shard</Filter>
+    </ClCompile>
     <ClCompile Include="..\s\d_logic.cpp">
+      <Filter>shard</Filter>
+    </ClCompile>
+    <ClCompile Include="..\s\d_migrate.cpp">
+      <Filter>shard</Filter>
+    </ClCompile>
+    <ClCompile Include="..\s\d_state.cpp">
+      <Filter>shard</Filter>
+    </ClCompile>
+    <ClCompile Include="..\s\d_util.cpp">
+      <Filter>shard</Filter>
+    </ClCompile>
+    <ClCompile Include="..\s\d_writeback.cpp">
+      <Filter>shard</Filter>
+    </ClCompile>
+    <ClCompile Include="..\s\grid.cpp">
+      <Filter>shard</Filter>
+    </ClCompile>
+    <ClCompile Include="..\s\shard.cpp">
+      <Filter>shard</Filter>
+    </ClCompile>
+    <ClCompile Include="..\s\shardconnection.cpp">
+      <Filter>shard</Filter>
+    </ClCompile>
+    <ClCompile Include="..\s\shardkey.cpp">
       <Filter>shard</Filter>
     </ClCompile>
     <ClCompile Include="..\scripting\engine.cpp">
@@ -569,107 +676,32 @@
     <ClCompile Include="updatetests.cpp">
       <Filter>dbtests</Filter>
     </ClCompile>
-    <ClCompile Include="..\db\stats\counters.cpp">
-      <Filter>stats</Filter>
-    </ClCompile>
-    <ClCompile Include="..\db\stats\snapshots.cpp">
-      <Filter>stats</Filter>
-    </ClCompile>
-    <ClCompile Include="..\db\stats\top.cpp">
-      <Filter>stats</Filter>
-    </ClCompile>
     <ClCompile Include="..\db\repl\consensus.cpp">
       <Filter>replsets</Filter>
     </ClCompile>
     <ClCompile Include="..\db\repl\health.cpp">
       <Filter>replsets</Filter>
     </ClCompile>
+    <ClCompile Include="..\db\repl\heartbeat.cpp">
+      <Filter>replsets</Filter>
+    </ClCompile>
+    <ClCompile Include="..\db\repl\manager.cpp">
+      <Filter>replsets</Filter>
+    </ClCompile>
     <ClCompile Include="..\db\repl\replset_commands.cpp">
+      <Filter>replsets</Filter>
+    </ClCompile>
+    <ClCompile Include="..\db\repl\rs.cpp">
       <Filter>replsets</Filter>
     </ClCompile>
     <ClCompile Include="..\db\repl\rs_config.cpp">
       <Filter>replsets</Filter>
     </ClCompile>
-    <ClCompile Include="..\db\btree.cpp">
-      <Filter>btree related</Filter>
-    </ClCompile>
-    <ClCompile Include="..\db\btreecursor.cpp">
-      <Filter>btree related</Filter>
-    </ClCompile>
-    <ClCompile Include="..\db\repl\manager.cpp">
-      <Filter>db\cpp</Filter>
+    <ClCompile Include="..\db\repl\rs_initialsync.cpp">
+      <Filter>replsets</Filter>
     </ClCompile>
     <ClCompile Include="..\db\repl\rs_initiate.cpp">
       <Filter>replsets</Filter>
-    </ClCompile>
-    <ClCompile Include="..\util\concurrency\vars.cpp">
-      <Filter>util\concurrency</Filter>
-    </ClCompile>
-    <ClCompile Include="..\util\concurrency\task.cpp">
-      <Filter>util\concurrency</Filter>
-    </ClCompile>
-    <ClCompile Include="..\db\repl\heartbeat.cpp">
-      <Filter>replsets</Filter>
-    </ClCompile>
-    <ClCompile Include="..\s\shardconnection.cpp">
-      <Filter>shard</Filter>
-    </ClCompile>
-    <ClCompile Include="..\s\d_util.cpp">
-      <Filter>shard</Filter>
-    </ClCompile>
-    <ClCompile Include="..\util\concurrency\thread_pool.cpp">
-      <Filter>util\concurrency</Filter>
-    </ClCompile>
-    <ClCompile Include="..\util\version.cpp">
-      <Filter>db\cpp</Filter>
-    </ClCompile>
-    <ClCompile Include="..\db\repl\rs.cpp">
-      <Filter>replsets</Filter>
-    </ClCompile>
-    <ClCompile Include="..\util\text.cpp">
-      <Filter>util\cpp</Filter>
-    </ClCompile>
-    <ClCompile Include="..\client\gridfs.cpp">
-      <Filter>db\cpp</Filter>
-    </ClCompile>
-    <ClCompile Include="..\s\d_writeback.cpp">
-      <Filter>shard</Filter>
-    </ClCompile>
-    <ClCompile Include="..\s\d_state.cpp">
-      <Filter>shard</Filter>
-    </ClCompile>
-    <ClCompile Include="..\db\geo\2d.cpp">
-      <Filter>db\cpp</Filter>
-    </ClCompile>
-    <ClCompile Include="..\s\chunk.cpp">
-      <Filter>db\cpp</Filter>
-    </ClCompile>
-    <ClCompile Include="..\s\config.cpp">
-      <Filter>db\cpp</Filter>
-    </ClCompile>
-    <ClCompile Include="..\s\shardkey.cpp">
-      <Filter>db\cpp</Filter>
-    </ClCompile>
-    <ClCompile Include="..\s\shard.cpp">
-      <Filter>db\cpp</Filter>
-    </ClCompile>
-    <ClCompile Include="..\client\model.cpp">
-      <Filter>db\cpp</Filter>
-    </ClCompile>
-    <ClCompile Include="..\client\parallel.cpp">
-      <Filter>db\cpp</Filter>
-    </ClCompile>
-    <ClCompile Include="..\util\stringutils.cpp">
-      <Filter>db\cpp</Filter>
-    </ClCompile>
-    <ClCompile Include="..\client\distlock.cpp">
-      <Filter>client</Filter>
-    </ClCompile>
-    <ClCompile Include="..\s\d_migrate.cpp">
-      <Filter>db\cpp</Filter>
-    </ClCompile>
-    <ClCompile Include="..\s\d_split.cpp">
-      <Filter>db\cpp</Filter>
     </ClCompile>
     <ClCompile Include="..\db\repl\rs_rollback.cpp">
       <Filter>replsets</Filter>
@@ -677,26 +709,11 @@
     <ClCompile Include="..\db\repl\rs_sync.cpp">
       <Filter>replsets</Filter>
     </ClCompile>
-    <ClCompile Include="..\db\repl\rs_initialsync.cpp">
-      <Filter>replsets</Filter>
+    <ClCompile Include="..\db\btree.cpp">
+      <Filter>btree related</Filter>
     </ClCompile>
-    <ClCompile Include="..\db\geo\haystack.cpp">
-      <Filter>db\cpp</Filter>
-    </ClCompile>
-    <ClCompile Include="..\db\cap.cpp">
-      <Filter>db\cpp</Filter>
-    </ClCompile>
-    <ClCompile Include="..\util\log.cpp">
-      <Filter>db\cpp</Filter>
-    </ClCompile>
-    <ClCompile Include="..\util\processinfo.cpp">
-      <Filter>db\cpp</Filter>
-    </ClCompile>
-    <ClCompile Include="..\s\grid.cpp">
-      <Filter>db\cpp</Filter>
-    </ClCompile>
-    <ClCompile Include="..\db\restapi.cpp">
-      <Filter>db\cpp</Filter>
+    <ClCompile Include="..\db\btreecursor.cpp">
+      <Filter>btree related</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

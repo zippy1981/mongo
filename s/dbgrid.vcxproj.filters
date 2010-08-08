@@ -10,23 +10,30 @@
       <Extensions>h;hpp;hxx;hm;inl;inc;xsd</Extensions>
     </Filter>
     <Filter Include="Header Files\Header Shared">
-      <UniqueIdentifier>{4048b883-7255-40b3-b0e9-4c1044cff049}</UniqueIdentifier>
+      <UniqueIdentifier>{ddf8b598-889b-4ffd-b9ed-59b5fbe54a50}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Resource Files">
+      <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
+      <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav</Extensions>
     </Filter>
     <Filter Include="libs_etc">
-      <UniqueIdentifier>{17d48ddf-5c49-4dfd-bafa-16d5fed290cd}</UniqueIdentifier>
+      <UniqueIdentifier>{43522617-8a6a-4722-8fec-47eca6fb5586}</UniqueIdentifier>
     </Filter>
     <Filter Include="libs_etc\pcre">
-      <UniqueIdentifier>{4c2dd526-4a57-4ff7-862f-2bd7ec4955b3}</UniqueIdentifier>
+      <UniqueIdentifier>{751f0be9-f1d3-4d47-96c0-2f41b4d3eb4b}</UniqueIdentifier>
     </Filter>
     <Filter Include="client">
-      <UniqueIdentifier>{b4f6635b-8c64-4ceb-8077-43203533d0b9}</UniqueIdentifier>
+      <UniqueIdentifier>{bbbe9612-3117-48b1-b317-adfe8957fb96}</UniqueIdentifier>
     </Filter>
     <Filter Include="Shared Source Files">
-      <UniqueIdentifier>{e59da087-4433-46b9-862d-746cbed27b97}</UniqueIdentifier>
+      <UniqueIdentifier>{8a64794c-2dd8-4fe7-a6ca-9e8834103ae6}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="balance.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="balancer_policy.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="chunk.cpp">
@@ -47,6 +54,9 @@
     <ClCompile Include="cursors.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="grid.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="..\db\queryutil.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -60,6 +70,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="shard.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="shardconnection.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="shardkey.cpp">
@@ -182,7 +195,13 @@
     <ClCompile Include="..\db\stats\counters.cpp">
       <Filter>Shared Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="..\db\dbwebserver.cpp">
+      <Filter>Shared Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="..\util\debug_util.cpp">
+      <Filter>Shared Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\client\distlock.cpp">
       <Filter>Shared Source Files</Filter>
     </ClCompile>
     <ClCompile Include="..\scripting\engine.cpp">
@@ -203,6 +222,9 @@
     <ClCompile Include="..\db\lasterror.cpp">
       <Filter>Shared Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="..\util\log.cpp">
+      <Filter>Shared Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="..\db\matcher.cpp">
       <Filter>Shared Source Files</Filter>
     </ClCompile>
@@ -216,6 +238,9 @@
       <Filter>Shared Source Files</Filter>
     </ClCompile>
     <ClCompile Include="..\util\message_server_port.cpp">
+      <Filter>Shared Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\util\miniwebserver.cpp">
       <Filter>Shared Source Files</Filter>
     </ClCompile>
     <ClCompile Include="..\util\mmap.cpp">
@@ -233,60 +258,42 @@
     <ClCompile Include="..\client\parallel.cpp">
       <Filter>Shared Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="..\util\processinfo.cpp">
+      <Filter>Shared Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="..\util\processinfo_win32.cpp">
       <Filter>Shared Source Files</Filter>
     </ClCompile>
     <ClCompile Include="..\util\sock.cpp">
       <Filter>Shared Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="..\util\stringutils.cpp">
+      <Filter>Shared Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="..\client\syncclusterconnection.cpp">
+      <Filter>Shared Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\util\text.cpp">
       <Filter>Shared Source Files</Filter>
     </ClCompile>
     <ClCompile Include="..\util\util.cpp">
       <Filter>Shared Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\pch.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="shardconnection.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="..\util\concurrency\vars.cpp">
       <Filter>Shared Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\util\concurrency\thread_pool.cpp">
-      <Filter>Shared Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="..\util\version.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="..\util\text.cpp">
       <Filter>Shared Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="balancer_policy.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="..\util\stringutils.cpp">
-      <Filter>Shared Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="..\client\distlock.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="..\util\log.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="grid.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="..\util\processinfo.cpp">
+    <ClCompile Include="..\pch.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="gridconfig.h">
+    <ClInclude Include="balancer_policy.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="griddatabase.h">
+    <ClInclude Include="grid.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="shard.h">
@@ -316,6 +323,9 @@
     <ClInclude Include="..\pch.h">
       <Filter>Header Files\Header Shared</Filter>
     </ClInclude>
+    <ClInclude Include="..\util\text.h">
+      <Filter>Header Files\Header Shared</Filter>
+    </ClInclude>
     <ClInclude Include="..\..\boostw\boost_1_34_1\boost\config\auto_link.hpp">
       <Filter>libs_etc</Filter>
     </ClInclude>
@@ -337,23 +347,10 @@
     <ClInclude Include="..\client\model.h">
       <Filter>client</Filter>
     </ClInclude>
-    <ClInclude Include="..\util\version.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="balancer_policy.h">
-      <Filter>Source Files</Filter>
-    </ClInclude>
-    <ClInclude Include="grid.h">
-      <Filter>Source Files</Filter>
-    </ClInclude>
-    <ClInclude Include="..\util\processinfo.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <Library Include="..\..\js\js32d.lib" />
-    <Library Include="..\..\js\js32r.lib" />
-    <Library Include="..\..\js\js64d.lib" />
-    <Library Include="..\..\js\js64r.lib" />
+    <Library Include="..\..\js\src\js.lib">
+      <Filter>libs_etc</Filter>
+    </Library>
   </ItemGroup>
 </Project>
