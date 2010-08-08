@@ -624,8 +624,7 @@ namespace mongo {
                     return false;
                 }
 
-                // HostAndPort defaults to a different port; adjust if needed.
-                if ( shardAddr.port() == CmdLine::DefaultDBPort ){
+                if ( ! shardAddr.hasPort() ){
                     shardAddr.setPort( CmdLine::ShardServerPort );
                 }
 
@@ -639,7 +638,7 @@ namespace mongo {
                     maxSize = cmdObj[ ShardFields::maxSize.name() ].numberLong();
                 }
                 
-                if ( ! grid.addShard( &name , shardAddr.toString() , maxSize , &errmsg ) ){
+                if ( ! grid.addShard( &name , shardAddr.toString() , maxSize , errmsg ) ){
                     log() << "addshard request " << cmdObj << " failed: " << errmsg << endl;
                     return false;
                 }

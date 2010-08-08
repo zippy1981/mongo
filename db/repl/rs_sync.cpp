@@ -38,6 +38,8 @@ namespace mongo {
         nsToDatabase(ns, db);
 
         if ( *ns == '.' || *ns == 0 ) {
+		    if( *o.getStringField("op") == 'n' )
+			    return;
             log() << "replSet skipping bad op in oplog: " << o.toString() << endl;
             return;
         }
@@ -47,6 +49,86 @@ namespace mongo {
 
         /* todo : if this asserts, do we want to ignore or not? */
         applyOperation_inlock(o);
+    }
+
+    bool ReplSetImpl::initialSyncOplogApplication(
+        string hn, 
+        const Member *primary,
+        OpTime applyGTE,
+        OpTime minValid)
+    { 
+        if( primary == 0 ) return false;
+
+        OpTime ts;
+        try {
+            OplogReader r;
+            if( !r.connect(hn) ) { 
+                log(2) << "replSet can't connect to " << hn << " to read operations" << rsLog;
+                return false;
+            }
+
+            r.query(rsoplog, bo());
+            assert( r.haveCursor() );
+
+            /* we lock outside the loop to avoid the overhead of locking on every operation.  server isn't usable yet anyway! */
+            writelock lk("");
+
+            {
+                if( !r.more() ) { 
+                    sethbmsg("replSet initial sync error reading remote oplog");
+                    return false;
+                }
+                bo op = r.next();
+                OpTime t = op["ts"]._opTime();
+                r.putBack(op);
+                assert( !t.isNull() );
+                if( t > applyGTE ) {
+                    sethbmsg(str::stream() << "error " << hn << " oplog wrapped during initial sync");
+                    return false;
+                }
+            }
+
+            // todo : use exhaust
+            unsigned long long n = 0;
+            while( 1 ) { 
+                if( !r.more() )
+                    break;
+                BSONObj o = r.nextSafe(); /* note we might get "not master" at some point */
+                {
+                    //writelock lk("");
+
+                    ts = o["ts"]._opTime();
+
+                    /* if we have become primary, we dont' want to apply things from elsewhere
+                        anymore. assumePrimary is in the db lock so we are safe as long as 
+                        we check after we locked above. */
+					const Member *p1 = box.getPrimary();
+                    if( p1 != primary ) {
+					  log() << "replSet primary was:" << primary->fullName() << " now:" << 
+						(p1 != 0 ? p1->fullName() : "none") << rsLog;
+                        throw DBException("primary changed",0);
+                    }
+
+                    if( ts >= applyGTE ) {
+                        // optimes before we started copying need not be applied.
+                        syncApply(o);
+                    }
+                    _logOpObjRS(o);   /* with repl sets we write the ops to our oplog too */
+                }
+                if( ++n % 100000 == 0 ) { 
+                    // simple progress metering
+                    log() << "replSet initialSyncOplogApplication " << n << rsLog;
+                }
+            }
+        }
+        catch(DBException& e) { 
+            if( ts <= minValid ) {
+                // didn't make it far enough
+                log() << "replSet initial sync failing, error applying oplog " << e.toString() << rsLog;
+                return false;
+            }
+        }
+        return true;
     }
 
     void ReplSetImpl::syncTail() { 
@@ -121,8 +203,8 @@ namespace mongo {
             OpTime ts = o["ts"]._opTime();
             long long h = o["h"].numberLong();
             if( ts != lastOpTimeWritten || h != lastH ) { 
-                log() << "TEMP our last op time written: " << lastOpTimeWritten.toStringPretty() << endl;
-                log() << "TEMP primary's GTE: " << ts.toStringPretty() << endl;
+                log(1) << "TEMP our last op time written: " << lastOpTimeWritten.toStringPretty() << endl;
+                log(1) << "TEMP primary's GTE: " << ts.toStringPretty() << endl;
                 /*
                 }*/
 
@@ -141,12 +223,12 @@ namespace mongo {
                     if( state().recovering() ) { 
                         /* can we go to RS_SECONDARY state?  we can if not too old and if minvalid achieved */
                         bool golive = false;			
-			OpTime minvalid;
+                        OpTime minvalid;
                         {
                             readlock lk("local.replset.minvalid");
-			    BSONObj mv;
+                            BSONObj mv;
                             if( Helpers::getSingleton("local.replset.minvalid", mv) ) { 
-			        minvalid = mv["ts"]._opTime();
+                                minvalid = mv["ts"]._opTime();
                                 if( minvalid <= lastOpTimeWritten ) { 
                                     golive=true;
                                 }
@@ -160,8 +242,7 @@ namespace mongo {
                             changeState(MemberState::RS_SECONDARY);
                         }
                         else { 
-			    sethbmsg(str::stream() << "still syncing, not yet to minValid optime " << minvalid.toString());
-			    //log() << "TEMP " << lastOpTimeWritten.toString() << rsLog;
+                            sethbmsg(str::stream() << "still syncing, not yet to minValid optime " << minvalid.toString());
                         }
 
                         /* todo: too stale capability */

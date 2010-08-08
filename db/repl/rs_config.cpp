@@ -114,7 +114,7 @@ namespace mongo {
         mchk(_id >= 0 && _id <= 255);
         mchk(priority >= 0 && priority <= 1000);
         mchk(votes >= 0 && votes <= 100);
-        uassert(13419, "replica set config : this version of mongo only supports priorities 0 and 1", priority == 0 || priority == 1);
+        uassert(13419, "this version of mongod only supports priorities 0 and 1", priority == 0 || priority == 1);
     }
 
     /*static*/ bool ReplSetConfig::legalChange(const ReplSetConfig& o, const ReplSetConfig& n, string& errmsg) { 
@@ -133,7 +133,7 @@ namespace mongo {
 
         /* TODO : MORE CHECKS HERE */
 
-        cout << "TODO : don't allow removal of a node until we handle it at the removed node end." << endl;
+        log() << "replSet TODO : don't allow removal of a node until we handle it at the removed node end?" << endl;
         // we could change its votes to zero perhaps instead as a short term...
 
         return true;
@@ -147,7 +147,7 @@ namespace mongo {
     void ReplSetConfig::check() const { 
         uassert(13132,
             "nonmatching repl set name in _id field; check --replSet command line",
-            startsWith(cmdLine.replSet, _id + '/'));
+            _id == cmdLine.ourSetName());
         uassert(13308, "replSet bad config version #", version > 0);
         uassert(13133, "replSet bad config no members", members.size() >= 1);
         uassert(13309, "replSet bad config maximum number of members is 7 (for now)", members.size() <= 7);
@@ -220,7 +220,7 @@ namespace mongo {
             catch(DBException& e) { 
                 log() << "replSet cfg parsing exception for members[" << i << "] " << e.what() << rsLog;
                 stringstream ss;
-                ss << "replSet members[" << i << "] bad config object";
+                ss << "bad config for member[" << i << "] " << e.what();
                 uassert(13135, ss.str(), false);
             }
             if( !(ords.count(m._id) == 0 && hosts.count(m.h.toString()) == 0) ) {
@@ -262,9 +262,7 @@ namespace mongo {
             }
             else {
                 /* first, make sure other node is configured to be a replset. just to be safe. */
-                size_t sl = cmdLine.replSet.find('/');
-                assert( sl != string::npos );
-                string setname = cmdLine.replSet.substr(0, sl);
+                string setname = cmdLine.ourSetName();
                 BSONObj cmd = BSON( "replSetHeartbeat" << setname );
                 int theirVersion;
                 BSONObj info;

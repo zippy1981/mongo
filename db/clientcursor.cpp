@@ -236,9 +236,9 @@ namespace mongo {
         }        
     }
     
-    void ClientCursor::prepareToYield( YieldData &data ) {
+    bool ClientCursor::prepareToYield( YieldData &data ) {
         if ( ! c->supportYields() )
-            return;
+            return false;
         // need to store in case 'this' gets deleted
         data._id = cursorid;
         
@@ -268,6 +268,7 @@ namespace mongo {
                 }
             }
         }        
+        return true;
     }
     
     bool ClientCursor::recoverFromYield( const YieldData &data ) {
@@ -340,6 +341,7 @@ namespace mongo {
         virtual LockType locktype() const { return NONE; }
         bool run(const string&, BSONObj& jsobj, string& errmsg, BSONObjBuilder& result, bool fromRepl ){
             recursive_scoped_lock lock(ClientCursor::ccmutex);
+            result.append("totalOpen", unsigned( ClientCursor::clientCursorsById.size() ) );
             result.append("byLocation_size", unsigned( ClientCursor::byLoc.size() ) );
             result.append("clientCursors_size", unsigned( ClientCursor::clientCursorsById.size() ) );
             return true;

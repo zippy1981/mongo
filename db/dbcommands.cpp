@@ -126,6 +126,7 @@ namespace mongo {
                     assert( sprintf( buf , "w block pass: %lld" , ++passes ) < 30 );
                     c.curop()->setMessage( buf );
                     sleepmillis(1);
+                    killCurrentOp.checkForInterrupt();
                 }
                 result.appendNumber( "wtime" , t.millis() );
             }
@@ -1034,7 +1035,7 @@ namespace mongo {
         virtual bool slaveOk() const { return true; }
         virtual LockType locktype() const { return READ; } 
         virtual void help( stringstream &help ) const {
-            help << "{ collStats:\"blog.posts\" } ";
+            help << "{ collStats:\"blog.posts\" , scale : 1 } scale divides sizes e.g. for KB use 1024";
         }
         bool run(const string& dbname, BSONObj& jsobj, string& errmsg, BSONObjBuilder& result, bool fromRepl ){
             string ns = dbname + "." + jsobj.firstElement().valuestr();
@@ -1056,6 +1057,10 @@ namespace mongo {
                     return false;
                 }
                     
+            }
+            else if ( jsobj["scale"].trueValue() ){
+                errmsg = "scale has to be a number > 0";
+                return false;
             }
 
             long long size = nsd->datasize / scale;
@@ -1703,6 +1708,35 @@ namespace mongo {
 
     } dbhashCmd;
 
+    /* for diagnostic / testing purposes. */
+    class CmdSleep : public Command { 
+    public:
+        virtual LockType locktype() const { return NONE; } 
+        virtual bool adminOnly() const { return true; }
+        virtual bool logTheOp() {
+            return false;
+        }
+        virtual bool slaveOk() const {
+            return true;
+        }
+        virtual void help( stringstream& help ) const {
+            help << "internal testing command.  Makes db block (in a read lock) for 100 seconds\n";
+            help << "w:true write lock";
+        }
+        CmdSleep() : Command("sleep") { }
+        bool run(const string& ns, BSONObj& cmdObj, string& errmsg, BSONObjBuilder& result, bool fromRepl) {
+            if( cmdObj.getBoolField("w") ) { 
+                writelock lk("");
+                sleepsecs(100);
+            }
+            else {
+                readlock lk("");
+                sleepsecs(100);
+            }
+            return true;
+        }
+    } cmdSleep;
+
     class AvailableQueryOptions : public Command {
     public:
         AvailableQueryOptions() : Command( "availablequeryoptions" ){}
@@ -1739,6 +1773,24 @@ namespace mongo {
             return true;
         }
     } capTruncCmd;    
+    
+    // just for testing
+    class EmptyCapped : public Command {
+    public:
+        EmptyCapped() : Command( "emptycapped" ){}
+        virtual bool slaveOk() const { return false; }
+        virtual LockType locktype() const { return WRITE; }
+        virtual bool requiresAuth() { return true; }
+        virtual bool run(const string& dbname , BSONObj& cmdObj, string& errmsg, BSONObjBuilder& result, bool){
+            string coll = cmdObj[ "emptycapped" ].valuestrsafe();
+            uassert( 13428, "emptycapped must specify a collection", !coll.empty() );
+            string ns = dbname + "." + coll;
+            NamespaceDetails *nsd = nsdetails( ns.c_str() );
+            massert( 13429, "emptycapped no such collection", nsd );
+            nsd->emptyCappedCollection( ns.c_str() );
+            return true;
+        }
+    } emptyCappedCmd;    
     
     /** 
      * this handles

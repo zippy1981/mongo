@@ -613,6 +613,8 @@ namespace mongo {
             BSONObjIteratorSorted i( query );
             while ( i.more() ){
                 BSONElement e = i.next();
+                if ( e.fieldName()[0] == '$' ) // for $atomic and anything else we add
+                    continue;
 
                 if ( e.type() == Object && e.embeddedObject().firstElement().fieldName()[0] == '$' ){
                     // this means this is a $gt type filter, so don't make part of the new object
@@ -735,11 +737,11 @@ namespace mongo {
                 setComplete();
             }
         }
-        virtual void prepareToYield() {
+        virtual bool prepareToYield() {
             if ( ! _cc ) {
                 _cc.reset( new ClientCursor( QueryOption_NoCursorTimeout , _c , qp().ns() ) );
             }
-            _cc->prepareToYield( _yieldData );
+            return _cc->prepareToYield( _yieldData );
         }        
         virtual void recoverFromYield() {
             if ( !ClientCursor::recoverFromYield( _yieldData ) ) {
@@ -747,7 +749,11 @@ namespace mongo {
                 _cc.reset();
                 massert( 13339, "cursor dropped during update", false );
             }
-        }        
+        }     
+        virtual long long nscanned() {
+            assert( _c.get() );
+            return _c->nscanned();
+        }
         virtual void next() {
             if ( ! _c->ok() ) {
                 setComplete();
@@ -864,7 +870,7 @@ namespace mongo {
         return UpdateResult( 1 , 0 , 1 );
     }
  
-    UpdateResult _updateObjects(bool god, const char *ns, const BSONObj& updateobj, BSONObj patternOrig, bool upsert, bool multi, bool logop , OpDebug& debug) {
+    UpdateResult _updateObjects(bool god, const char *ns, const BSONObj& updateobj, BSONObj patternOrig, bool upsert, bool multi, bool logop , OpDebug& debug, RemoveSaver* rs ) {
         DEBUGUPDATE( "update: " << ns << " update: " << updateobj << " query: " << patternOrig << " upsert: " << upsert << " multi: " << multi );
         Client& client = cc();
         int profile = client.database()->profile;
@@ -929,6 +935,9 @@ namespace mongo {
                     if ( ! cc->yield() ){
                         cc.release();
                         // TODO should we assert or something?
+                        break;
+                    }
+                    if ( !c->ok() ) {
                         break;
                     }
                 }
@@ -1012,6 +1021,9 @@ namespace mongo {
                     }
                 } 
                 else {
+                    if ( rs )
+                        rs->goingToDelete( onDisk );
+
                     BSONObj newObj = mss->createNewFromMods();
                     checkTooLarge(newObj);
                     bool changedId;
@@ -1054,6 +1066,9 @@ namespace mongo {
                     }
                     if ( ! cc->yield() ){
                         cc.release();
+                        break;
+                    }
+                    if ( !c->ok() ) {
                         break;
                     }
                 }

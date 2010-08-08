@@ -71,6 +71,27 @@ namespace mongo {
             writebackId.clear();
         }
         void appendSelf( BSONObjBuilder &b );
+
+        struct Disabled : boost::noncopyable {
+            Disabled( LastError * le ){
+                _le = le;
+                if ( _le ){
+                    _prev = _le->disabled;
+                    _le->disabled = true;
+                } else {
+                    _prev = false;
+                }
+            }
+            
+            ~Disabled(){
+                if ( _le )
+                    _le->disabled = _prev;
+            }
+
+            LastError * _le;
+            bool _prev;
+        };
+        
         static LastError noError;
     };
 
@@ -81,7 +102,10 @@ namespace mongo {
         LastError * get( bool create = false );
         LastError * getSafe(){
             LastError * le = get(false);
-            assert( le );
+            if ( ! le ){
+                log( LL_ERROR ) << " no LastError!  id: " << getID() << endl;
+                assert( le );
+            }
             return le;
         }
 
@@ -121,7 +145,7 @@ namespace mongo {
         static mongo::mutex _idsmutex;
         map<int,Status> _ids;    
     } lastError;
-    
+
     void raiseError(int code , const char *msg);
 
 } // namespace mongo

@@ -50,7 +50,7 @@ namespace mongo {
             // test path
             FILE * test = fopen( lp.c_str() , _append ? "a" : "w" );
             if ( ! test ){
-                cout << "can't open [" << lp << "] for log file" << endl;
+                cout << "can't open [" << lp << "] for log file: " << errnoWithDescription() << endl;
                 dbexit( EXIT_BADOPTIONS );
                 assert( 0 );
             }
@@ -76,8 +76,7 @@ namespace mongo {
                 localtime_r( &_opened , &t );
                 
                 stringstream ss;
-                ss << _path << ".";
-                terseCurrentTime( ss , true );
+                ss << _path << "." << terseCurrentTime(false);
                 string s = ss.str();
                 rename( _path.c_str() , s.c_str() );
 #endif

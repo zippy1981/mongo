@@ -31,6 +31,7 @@
 #include "chunk.h"
 #include "balance.h"
 #include "grid.h"
+#include "cursors.h"
 
 namespace mongo {
     
@@ -63,7 +64,8 @@ namespace mongo {
     class ShardingConnectionHook : public DBConnectionHook {
     public:
         virtual void onCreate( DBClientBase * conn ){
-            conn->simpleCommand( "admin" , 0 , "switchtoclienterrors" );
+            if ( conn->type() != ConnectionString::SYNC )
+                conn->simpleCommand( "admin" , 0 , "switchtoclienterrors" );
         }
         virtual void onHandedOut( DBClientBase * conn ){
             ClientInfo::get()->addShard( conn->getServerAddress() );
@@ -125,12 +127,14 @@ namespace mongo {
 
     void start( const MessageServer::Options& opts ){
         balancer.go();
+        cursorCache.startTimeoutThread();
 
         log() << "waiting for connections on port " << cmdLine.port << endl;
         //DbGridListener l(port);
         //l.listen();
         ShardedMessageHandler handler;
         MessageServer * server = createServer( opts , &handler );
+        server->setAsTimeTracker();
         server->run();
     }
 
@@ -257,7 +261,7 @@ int main(int argc, char* argv[], char *envp[] ) {
         return 7;
     }
     
-    if ( ! configServer.ok() ){
+    if ( ! configServer.ok( true ) ){
         cout << "configServer startup check failed" << endl;
         return 8;
     }

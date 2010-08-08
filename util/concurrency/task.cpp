@@ -117,27 +117,55 @@ namespace mongo {
 
         void Server::doWork() { 
             starting();
-            rq = false;
             while( 1 ) { 
                 lam f;
-                {
+                try {
                     boost::mutex::scoped_lock lk(m);
                     while( d.empty() )
                         c.wait(lk);
                     f = d.front();
                     d.pop_front();
                 }
+                catch(...) { 
+                    log() << "ERROR exception in Server:doWork?" << endl;
+                }
                 try {
                     f();
                     if( rq ) {
                         rq = false;
-                        send(f);
+                        {
+                            boost::mutex::scoped_lock lk(m);
+                            d.push_back(f);
+                        }
                     }
                 } catch(std::exception& e) { 
                     log() << "Server::doWork() exception " << e.what() << endl;
+                } catch(...) {
+                    log() << "Server::doWork() unknown exception!" << endl;
                 }
             }
         }
-        
+
+        static Server *s;
+        static void abc(int i) { 
+            cout << "Hello " << i << endl;
+            s->requeue();
+        }
+        class TaskUnitTest : public mongo::UnitTest {
+        public:
+            virtual void run() { 
+                lam f = boost::bind(abc, 3);
+                //f();
+
+                s = new Server("unittest");
+                fork(s);
+                s->send(f);
+
+                sleepsecs(30);
+                cout <<" done" << endl;
+
+            }
+        }; // not running. taskunittest;
+
     }
 }

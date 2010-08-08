@@ -74,9 +74,10 @@ namespace mongo {
             }
 
             assert( cursor );
-            cursor->init();
 
             try {
+                cursor->init();
+
                 log(5) << "   cursor type: " << cursor->type() << endl;
                 shardedCursorTypes.hit( cursor->type() );
             
@@ -113,10 +114,12 @@ namespace mongo {
             }
             
             if ( cursor->sendNextBatch( r , ntoreturn ) ){
-                log(6) << "\t cursor finished: " << id << endl;
+                // still more data
+                cursor->accessed();
                 return;
             }
             
+            // we've exhausted the cursor
             cursorCache.remove( id );
         }
         

@@ -35,6 +35,7 @@
 #include "queryoptimizer.h"
 #include "lasterror.h"
 #include "../s/d_logic.h"
+#include "repl_block.h"
 
 namespace mongo {
 
@@ -61,11 +62,11 @@ namespace mongo {
         virtual void _init() {
             c_ = qp().newCursor();
         }
-        virtual void prepareToYield() {
+        virtual bool prepareToYield() {
             if ( ! _cc ) {
                 _cc.reset( new ClientCursor( QueryOption_NoCursorTimeout , c_ , qp().ns() ) );
             }
-            _cc->prepareToYield( _yieldData );
+            return _cc->prepareToYield( _yieldData );
         }        
         virtual void recoverFromYield() {
             if ( !ClientCursor::recoverFromYield( _yieldData ) ) {
@@ -73,6 +74,10 @@ namespace mongo {
                 c_.reset();
                 massert( 13340, "cursor dropped during delete", false );
             }
+        }
+        virtual long long nscanned() {
+            assert( c_.get() );
+            return c_->nscanned();
         }
         virtual void next() {
             if ( !c_->ok() ) {
@@ -88,7 +93,7 @@ namespace mongo {
             }
 
             c_->advance();
-            ++_nscanned;
+            _nscanned = c_->nscanned();
             if ( count_ > bestCount_ )
                 bestCount_ = count_;
             
@@ -120,7 +125,7 @@ namespace mongo {
        justOne: stop after 1 match
        god:     allow access to system namespaces, and don't yield
     */
-    long long deleteObjects(const char *ns, BSONObj pattern, bool justOneOrig, bool logop, bool god) {
+    long long deleteObjects(const char *ns, BSONObj pattern, bool justOneOrig, bool logop, bool god, RemoveSaver * rs ) {
         if( !god ) {
             if ( strstr(ns, ".system.") ) {
                 /* note a delete from system.indexes would corrupt the db 
@@ -163,6 +168,9 @@ namespace mongo {
                 // TODO should we assert or something?
                 break;
             }
+            if ( !cc->c->ok() ) {
+                break; // if we yielded, could have hit the end
+            }
                 
             // this way we can avoid calling updateLocation() every time (expensive)
             // as well as some other nuances handled
@@ -201,6 +209,9 @@ namespace mongo {
                     problem() << "deleted object without id, not logging" << endl;
                 }
             }
+
+            if ( rs )
+                rs->goingToDelete( rloc.obj() /*cc->c->current()*/ );
 
             theDataFileMgr.deleteRecord(ns, rloc.rec(), rloc);
             nDeleted++;
@@ -405,11 +416,16 @@ namespace mongo {
             }
         }
 
-        virtual void prepareToYield() {
+        virtual long long nscanned() {
+            assert( c_.get() );
+            return c_->nscanned();
+        }
+        
+        virtual bool prepareToYield() {
             if ( ! _cc ) {
                 _cc.reset( new ClientCursor( QueryOption_NoCursorTimeout , c_ , _ns.c_str() ) );
             }
-            _cc->prepareToYield( _yieldData );
+            return _cc->prepareToYield( _yieldData );
         }
         
         virtual void recoverFromYield() {
@@ -629,14 +645,14 @@ namespace mongo {
             }
         }
         
-        virtual void prepareToYield() {
+        virtual bool prepareToYield() {
             if ( _findingStartCursor.get() ) {
-                _findingStartCursor->prepareToYield();
+                return _findingStartCursor->prepareToYield();
             } else {
                 if ( ! _cc ) {
                     _cc.reset( new ClientCursor( QueryOption_NoCursorTimeout , _c , _pq.ns() ) );
                 }
-                _cc->prepareToYield( _yieldData );
+                return _cc->prepareToYield( _yieldData );
             }
         }
         
@@ -652,6 +668,14 @@ namespace mongo {
                 } 
             }
         }        
+        
+        virtual long long nscanned() {
+            if ( _findingStartCursor.get() ) {
+                return 0; // should only be one query plan, so value doesn't really matter.
+            }
+            assert( _c.get() );
+            return _c->nscanned();
+        }
         
         virtual void next() {
             if ( _findingStartCursor.get() ) {
@@ -680,7 +704,7 @@ namespace mongo {
                 return;
             }
 
-            _nscanned++;
+            _nscanned = _c->nscanned();
             if ( !matcher()->matches(_c->currKey(), _c->currLoc() , &_details ) ) {
                 // not a match, continue onward
                 if ( _details.loadedObject )
@@ -715,6 +739,7 @@ namespace mongo {
                             }
                         }
                         else {
+
                             if ( _pq.returnKey() ){
                                 BSONObjBuilder bb( _buf );
                                 bb.appendKeys( _c->indexKeyPattern() , _c->currKey() );
@@ -723,6 +748,13 @@ namespace mongo {
                             else {
                                 BSONObj js = _c->current();
                                 assert( js.isValid() );
+
+                                if ( _oplogReplay ){
+                                    BSONElement e = js["ts"];
+                                    if ( e.type() == Date || e.type() == Timestamp )
+                                        _slaveReadTill = e._opTime();
+                                }
+
                                 fillQueryResultFromObj( _buf , _pq.getFields() , js , (_pq.showDiskLoc() ? &cl : 0));
                             }
                             _n++;
@@ -778,10 +810,11 @@ namespace mongo {
             } else {
                 setComplete();
             }
+
         }
         
         void finishExplain( const BSONObj &suffix ) {
-            BSONObj obj = _eb.finishWithSuffix( nscanned(), nscannedObjects(), n(), _curop.elapsedMillis(), suffix);
+            BSONObj obj = _eb.finishWithSuffix( totalNscanned(), nscannedObjects(), n(), _curop.elapsedMillis(), suffix);
             fillQueryResultFromObj(_buf, 0, obj);
             _n = 1;
             _oldN = 0;
@@ -797,7 +830,7 @@ namespace mongo {
             }
             UserQueryOp *ret = new UserQueryOp( _pq, _response, _eb, _curop );
             ret->_oldN = n();
-            ret->_oldNscanned = nscanned();
+            ret->_oldNscanned = totalNscanned();
             ret->_oldNscannedObjects = nscannedObjects();
             ret->_ntoskip = _ntoskip;
             return ret;
@@ -806,11 +839,16 @@ namespace mongo {
         bool scanAndOrderRequired() const { return _inMemSort; }
         shared_ptr<Cursor> cursor() { return _c; }
         int n() const { return _oldN + _n; }
-        long long nscanned() const { return _nscanned + _oldNscanned; }
+        long long totalNscanned() const { return _nscanned + _oldNscanned; }
         long long nscannedObjects() const { return _nscannedObjects + _oldNscannedObjects; }
         bool saveClientCursor() const { return _saveClientCursor; }
         bool wouldSaveClientCursor() const { return _wouldSaveClientCursor; }
         
+        void finishForOplogReplay( ClientCursor * cc ){
+            if ( _oplogReplay && ! _slaveReadTill.isNull() )
+                cc->_slaveReadTill = _slaveReadTill;
+
+        }
     private:
         BufBuilder _buf;
         const ParsedQuery& _pq;
@@ -842,6 +880,7 @@ namespace mongo {
         Message &_response;
         ExplainBuilder &_eb;
         CurOp &_curop;
+        OpTime _slaveReadTill;
     };
     
     /* run a query -- includes checking for and running a Command */
@@ -1006,7 +1045,7 @@ namespace mongo {
             dqo.finishExplain( explainSuffix );
         }
         n = dqo.n();
-        long long nscanned = dqo.nscanned();
+        long long nscanned = dqo.totalNscanned();
         if ( dqo.scanAndOrderRequired() )
             ss << " scanAndOrder ";
         shared_ptr<Cursor> cursor = dqo.cursor();
@@ -1039,6 +1078,7 @@ namespace mongo {
                 exhaust = ns;
                 ss << " exhaust ";
             }
+            dqo.finishForOplogReplay(cc);
         }
 
         QueryResult *qr = (QueryResult *) result.header();

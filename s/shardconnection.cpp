@@ -26,6 +26,7 @@ namespace mongo {
     
     /**
      * holds all the actual db connections for a client to various servers
+     * 1 pre thread, so don't have to worry about thread safety
      */
     class ClientConnections : boost::noncopyable {
     public:
@@ -37,26 +38,9 @@ namespace mongo {
         };
 
 
-        Nullstream& debug( Status * s = 0 , const string& addr = "" ){
-            static int ll = 9;
-
-            if ( logLevel < ll )
-                return nullstream;
-            Nullstream& l = log(ll);
-            
-            l << "ClientConnections DEBUG " << this << " ";
-            if ( s ){
-                l << "s: " << s << " addr: " << addr << " ";
-            }
-            return l;
-        }
-        
-        ClientConnections() : _mutex("ClientConnections") {
-            debug() << " NEW  " << endl;
-        }
+        ClientConnections(){}
         
         ~ClientConnections(){
-            debug() << " KILLING  " << endl;
             for ( map<string,Status*>::iterator i=_hosts.begin(); i!=_hosts.end(); ++i ){
                 string addr = i->first;
                 Status* ss = i->second;
@@ -70,41 +54,35 @@ namespace mongo {
             _hosts.clear();
         }
         
-        DBClientBase * get( const string& addr ){
-            scoped_lock lk( _mutex );
+        DBClientBase * get( const string& addr , const string& ns ){
+            _check( ns );
+
             Status* &s = _hosts[addr];
             if ( ! s )
                 s = new Status();
             
-            debug() << "WANT ONE pool avail: " << s->avail << endl;
-            
             if ( s->avail ){
                 DBClientBase* c = s->avail;
                 s->avail = 0;
-                debug( s , addr ) << "GOT  " << c << endl;
                 pool.onHandedOut( c );
                 return c;
             }
 
-            debug() << "CREATING NEW CONNECTION" << endl;
             s->created++;
             return pool.get( addr );
         }
         
         void done( const string& addr , DBClientBase* conn ){
-            scoped_lock lk( _mutex );
             Status* s = _hosts[addr];
             assert( s );
             if ( s->avail ){
-                delete conn;
+                release( addr , conn );
                 return;
             }
             s->avail = conn;
-            debug( s , addr ) << "PUSHING: " << conn << endl;
         }
         
         void sync(){
-            scoped_lock lk( _mutex );
             for ( map<string,Status*>::iterator i=_hosts.begin(); i!=_hosts.end(); ++i ){
                 string addr = i->first;
                 Status* ss = i->second;
@@ -120,12 +98,22 @@ namespace mongo {
         }
 
         void checkVersions( const string& ns ){
-            scoped_lock lk( _mutex );
+            vector<Shard> all;
+            Shard::getAllShards( all );
+            for ( unsigned i=0; i<all.size(); i++ ){
+                Status* &s = _hosts[all[i].getConnString()];
+                if ( ! s )
+                    s = new Status();
+            }
+
             for ( map<string,Status*>::iterator i=_hosts.begin(); i!=_hosts.end(); ++i ){
+                if ( ! Shard::isAShard( i->first ) )
+                    continue;
                 Status* ss = i->second;
                 assert( ss );
-                if ( ss->avail )
-                    checkShardVersion( *ss->avail , ns );
+                if ( ! ss->avail )
+                    ss->avail = pool.get( i->first );
+                checkShardVersion( *ss->avail , ns );
             }
         }
 
@@ -140,14 +128,20 @@ namespace mongo {
             }
         }
         
-        map<string,Status*> _hosts;
-        mongo::mutex _mutex;
+        void _check( const string& ns ){
+            if ( ns.size() == 0 || _seenNS.count( ns ) )
+                return;
+            _seenNS.insert( ns );
+            checkVersions( ns );
+        }
 
+        map<string,Status*> _hosts;
+        set<string> _seenNS;
         // -----
         
         static thread_specific_ptr<ClientConnections> _perThread;
 
-        static ClientConnections* get(){
+        static ClientConnections* threadInstance(){
             ClientConnections* cc = _perThread.get();
             if ( ! cc ){
                 cc = new ClientConnections();
@@ -176,7 +170,7 @@ namespace mongo {
     
     void ShardConnection::_init(){
         assert( _addr.size() );
-        _conn = ClientConnections::get()->get( _addr );
+        _conn = ClientConnections::threadInstance()->get( _addr , _ns );
         _finishedInit = false;
     }
 
@@ -184,7 +178,7 @@ namespace mongo {
         if ( _finishedInit )
             return;
         _finishedInit = true;
-
+        
         if ( _ns.size() ){
             _setVersion = checkShardVersion( *_conn , _ns );
         }
@@ -196,7 +190,7 @@ namespace mongo {
 
     void ShardConnection::done(){
         if ( _conn ){
-            ClientConnections::get()->done( _addr , _conn );
+            ClientConnections::threadInstance()->done( _addr , _conn );
             _conn = 0;
             _finishedInit = true;
         }
@@ -211,7 +205,7 @@ namespace mongo {
     }
 
     void ShardConnection::sync(){
-        ClientConnections::get()->sync();
+        ClientConnections::threadInstance()->sync();
     }
 
     bool ShardConnection::runCommand( const string& db , const BSONObj& cmd , BSONObj& res ){
@@ -230,7 +224,7 @@ namespace mongo {
     }
 
     void ShardConnection::checkMyConnectionVersions( const string & ns ){
-        ClientConnections::get()->checkVersions( ns );
+        ClientConnections::threadInstance()->checkVersions( ns );
     }
 
     ShardConnection::~ShardConnection() {

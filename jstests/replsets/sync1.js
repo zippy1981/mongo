@@ -56,23 +56,35 @@ doTest = function (signal) {
         dbs[0].bar.insert({ x: "foo" + i, y: "bar" + i, z: i, w: "biz baz bar boo" });
     }
 
+    var status;
+    do {
+        sleep(1000);
+        status = dbs[0].getSisterDB("admin").runCommand({replSetGetStatus : 1});
+    } while(status.members[1].state != 2 && status.members[2].state != 2);
+
     print("\nsync1.js ********************************************************************** part 6");
     dbs[0].getSisterDB("admin").runCommand({ replSetTest: 1, blind: true });
 
     print("\nsync1.js ********************************************************************** part 7");
 
+    sleep(5000);
+
     // yay! there are out-of-date nodes
     var max1;
     var max2;
+    var count = 0;
     while( 1 ) {
 	try {
 	    max1 = dbs[1].bar.find().sort({ z: -1 }).limit(1).next();
 	    max2 = dbs[2].bar.find().sort({ z: -1 }).limit(1).next();
 	}
 	catch(e) { 
-	    // we may get "not master" if in RECOVERING state
 	    print("\nsync1.js couldn't get max1/max2; retrying " + e);
 	    sleep(2000);
+            count++;
+            if (count == 50) {
+                assert(false, "errored out 50 times");
+            }
 	    continue;
 	}
 	break;
@@ -80,7 +92,7 @@ doTest = function (signal) {
 
     print("\nsync1.js ********************************************************************** part 8");
 
-    if (max1.z == inserts && max2.z == inserts) {
+    if (max1.z == (inserts-1) && max2.z == (inserts-1)) {
         print("\nsync1.js try increasing # if inserts and running again");
         replTest.stopSet(signal);
         return;
@@ -98,7 +110,7 @@ doTest = function (signal) {
     assert(newMaster + "" != master + "", "new master is " + newMaster + ", old master was " + master);
     print("\nsync1.js new master is " + newMaster + ", old master was " + master);
 
-    var count = 0;
+    count = 0;
     do {
 	try {
 	    max1 = dbs[1].bar.find().sort({ z: -1 }).limit(1).next();
@@ -141,36 +153,40 @@ doTest = function (signal) {
     // FAIL! This never resyncs
     // now this should resync
     print("\nsync1.js ********************************************************************** part 11");
-    var max0;
+    var max0 = null;
     count = 0;
     do {
-	try {
-	    max0 = dbs[0].bar.find().sort({ z: -1 }).limit(1).next();
-	}
-	catch(e) { 
-	    print("\nsync1.js phase 2 exception on bar.find() will sleep and try again " + e);
-	    sleep(2000);
-	    continue;
-	}
+		try {
+			max0 = dbs[0].bar.find().sort({ z: -1 }).limit(1).next();
+		}
+		catch(e) { 
+			print("\nsync1.js part 11 exception on bar.find() will sleep and try again " + e);
+			sleep(2000);
+			continue;
+		}
 
-        print("\nsync1.js phase 2 waiting for match " + count + " " + Date() + " z[0]:" + max0.z + " z:" + max);
+		printjson(max);
+		printjson(max0);
+        print("\nsync1.js part 11 waiting for match " + count + " " + Date() + " z[0]:" + max0.z + " z:" + max);
 
         sleep(2000);
 
         count++;
         if (count == 100) {
-            pause("fail phase 2");
+            pause("fail part 11");
             assert(false, "replsets/\nsync1.js fails timing out");
             replTest.stopSet(signal);
             return;
         }
-    } while (max0.z != max);
+        print("||||| count:" + count);
+	printjson(max0);
+    } while (! max0 || max0.z != max);
 
     print("\nsync1.js ********************************************************************** part 12");
     pause("\nsync1.js success");
     replTest.stopSet(signal);
 }
 
-if( 0 || debugging ) {
+if( 1 || debugging ) {
     doTest( 15 );
 }

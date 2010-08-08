@@ -28,6 +28,7 @@
 #include "../helpers/dblogger.h"
 #include "connections.h"
 #include "../../util/unittest.h"
+#include "../dbhelpers.h"
 
 namespace mongo {
     /* decls for connections.h */
@@ -63,7 +64,7 @@ namespace mongo {
         return s.str();
     }
 
-    void Member::summarizeAsHtml(stringstream& s) const { 
+    void Member::summarizeMember(stringstream& s) const { 
         s << tr();
         {
             stringstream u;
@@ -98,9 +99,9 @@ namespace mongo {
         stringstream q;
         q << "/_replSetOplog?" << id();
         s << td( a(q.str(), "", never ? "?" : hbinfo().opTime.toString()) );
-        if( hbinfo().skew > INT_MIN ) 
+        if( hbinfo().skew > INT_MIN ) {
             s << td( grey(str::stream() << hbinfo().skew,!ok) );
-        else
+        } else
             s << td("");
         s << _tr();
     }
@@ -170,7 +171,7 @@ namespace mongo {
     }
 
     void ReplSetImpl::_getOplogDiagsAsHtml(unsigned server_id, stringstream& ss) const { 
-        Member *m = findById(server_id);
+        const Member *m = findById(server_id);
         if( m == 0 ) { 
             ss << "Error : can't find a member with id: " << server_id << '\n';
             return;
@@ -184,6 +185,10 @@ namespace mongo {
         ScopedConn conn(m->fullName());        
 
         auto_ptr<DBClientCursor> c = conn->query(rsoplog, Query().sort("$natural",1), 20, 0, &fields);
+        if( c.get() == 0 ) { 
+            ss << "couldn't query " << rsoplog;
+            return;
+        }
         static const char *h[] = {"ts","optime", "h","op","ns","rest",0};
 
         ss << "<style type=\"text/css\" media=\"screen\">"
@@ -211,6 +216,10 @@ namespace mongo {
         }
         else { 
             auto_ptr<DBClientCursor> c = conn->query(rsoplog, Query().sort("$natural",-1), 20, 0, &fields);
+            if( c.get() == 0 ) { 
+                ss << "couldn't query [2] " << rsoplog;
+                return;
+            }
             string x;
             bo o = c->next();
             otEnd = o["ts"]._opTime();
@@ -269,6 +278,21 @@ namespace mongo {
            order on all the different web ui's; that is less confusing for the operator. */
         map<int,string> mp;
 
+        string myMinValid;
+        try {
+            readlocktry lk("local.replset.minvalid", 300);
+            if( lk.got() ) {
+                BSONObj mv;
+                if( Helpers::getSingleton("local.replset.minvalid", mv) ) { 
+                    myMinValid = "minvalid:" + mv["ts"]._opTime().toString();
+                }
+            }
+            else myMinValid = ".";
+        }
+        catch(...) { 
+            myMinValid = "exception fetching minvalid";
+        }
+
         {
             stringstream s;
             /* self row */
@@ -282,15 +306,15 @@ namespace mongo {
             s << td( _hbmsg );
             stringstream q;
             q << "/_replSetOplog?" << _self->id();
-            s << td( a(q.str(), "", theReplSet->lastOpTimeWritten.toString()) );
-            s << td("");
+            s << td( a(q.str(), myMinValid, theReplSet->lastOpTimeWritten.toString()) );
+            s << td(""); // skew
             s << _tr();
 			mp[_self->hbinfo().id()] = s.str();
         }
         Member *m = head();
         while( m ) {
 			stringstream s;
-            m->summarizeAsHtml(s);
+            m->summarizeMember(s);
 			mp[m->hbinfo().id()] = s.str();
             m = m->next();
         }
@@ -305,7 +329,7 @@ namespace mongo {
         _rsLog.toHTML( s );
     }
 
-    Member* ReplSetImpl::findById(unsigned id) const { 
+    const Member* ReplSetImpl::findById(unsigned id) const { 
         if( id == _self->id() ) return _self;
         for( Member *m = head(); m; m = m->next() )
             if( m->id() == id ) 
@@ -314,27 +338,40 @@ namespace mongo {
     }
 
     void ReplSetImpl::_summarizeStatus(BSONObjBuilder& b) const { 
-        Member *m =_members.head();
         vector<BSONObj> v;
 
         // add self
         {
             HostAndPort h(getHostName(), cmdLine.port);
-            v.push_back( 
-                BSON( "name" << h.toString() << "self" << true << 
-                      "errmsg" << _self->lhb() ) );
+
+            BSONObjBuilder bb;
+            bb.append("_id", (int) _self->id());
+            bb.append("name", h.toString());
+            bb.append("health", 1.0);
+            bb.append("state", (int) box.getState().s);
+            string s = _self->lhb();
+            if( !s.empty() )
+                bb.append("errmsg", s);
+            bb.append("self", true);
+            v.push_back(bb.obj());
         }
 
+        Member *m =_members.head();
         while( m ) {
             BSONObjBuilder bb;
+            bb.append("_id", (int) m->id());
             bb.append("name", m->fullName());
             bb.append("health", m->hbinfo().health);
+            bb.append("state", (int) m->state().s);
             bb.append("uptime", (unsigned) (m->hbinfo().upSince ? (time(0)-m->hbinfo().upSince) : 0));
             bb.appendTimeT("lastHeartbeat", m->hbinfo().lastHeartbeat);
-            bb.append("errmsg", m->lhb());
+            string s = m->lhb();
+            if( !s.empty() )
+                bb.append("errmsg", s);
             v.push_back(bb.obj());
             m = m->next();
         }
+        sort(v.begin(), v.end());
         b.append("set", name());
         b.appendTimeT("date", time(0));
         b.append("myState", box.getState().s);

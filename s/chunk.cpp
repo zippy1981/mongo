@@ -265,7 +265,7 @@ namespace mongo {
         }
 
         // Save the new key boundaries in the configDB.
-        _manager->save();
+        _manager->save( false );
 
         // Log all these changes in the configDB's log. We log a simple split differently than a multi-split.
         if ( newChunks.size() == 1) {
@@ -333,6 +333,7 @@ namespace mongo {
     }
     
     bool Chunk::splitIfShould( long dataWritten ){
+        LastError::Disabled d( lastError.get() );
         try {
             return _splitIfShould( dataWritten );
         }
@@ -451,8 +452,12 @@ namespace mongo {
         
         // not using regular count as this is more flexible and supports $min/$max
         Query q = Query().minKey(_min).maxKey(_max);
-        int n = conn->query(_manager->getns(), q, maxCount, 0, &fields)->itcount();
-        
+        int n;
+        {
+            auto_ptr<DBClientCursor> c = conn->query(_manager->getns(), q, maxCount, 0, &fields);
+            assert( c.get() );
+            n = c->itcount();
+        }        
         conn.done();
         return n;
     }
@@ -579,7 +584,7 @@ namespace mongo {
 
             _shards.insert(c->getShard());
 
-            save_inlock();
+            save_inlock( true );
             log() << "no chunks for:" << ns << " so creating first: " << c->toString() << endl;
         }
     }
@@ -625,6 +630,7 @@ namespace mongo {
 
         auto_ptr<DBClientCursor> cursor = conn->query(temp.getNS(), QUERY("ns" << _ns).sort("lastmod",1), 0, 0, 0, 0,
                 (DEBUG_BUILD ? 2 : 1000000)); // batch size. Try to induce potential race conditions in debug builds
+        assert( cursor.get() );
         while ( cursor->more() ){
             BSONObj d = cursor->next();
             if ( d["isMaxMarker"].trueValue() ){
@@ -801,7 +807,7 @@ namespace mongo {
 
     void ChunkManager::getAllShards( set<Shard>& all ){
         rwlock lk( _lock , false ); 
-        all = _shards;
+        all.insert(_shards.begin(), _shards.end());
     }
     
     void ChunkManager::ensureIndex_inlock(){
@@ -874,16 +880,18 @@ namespace mongo {
         configServer.logChange( "dropCollection" , _ns , BSONObj() );
     }
     
-    void ChunkManager::save(){
+    void ChunkManager::save( bool major ){
         rwlock lk( _lock , true ); 
-        save_inlock();
+        save_inlock( major );
     }
     
-    void ChunkManager::save_inlock(){
+    void ChunkManager::save_inlock( bool major ){
         
         ShardChunkVersion a = getVersion_inlock();
         assert( a > 0 || _chunkMap.size() <= 1 );
-        ShardChunkVersion nextChunkVersion = a.incMajor();
+        ShardChunkVersion nextChunkVersion = a;
+        nextChunkVersion.inc( major );
+
         vector<ChunkPtr> toFix;
         vector<ShardChunkVersion> newVersions;
         
@@ -901,7 +909,7 @@ namespace mongo {
             _sequenceNumber = ++NextSequenceNumber;
 
             ShardChunkVersion myVersion = nextChunkVersion;
-            ++nextChunkVersion;
+            nextChunkVersion.incMinor();
             toFix.push_back( c );
             newVersions.push_back( myVersion );
 
@@ -985,6 +993,7 @@ namespace mongo {
         ScopedDbConnection conn( temp.modelServer() );
         
         auto_ptr<DBClientCursor> cursor = conn->query(temp.getNS(), QUERY("ns" << _ns).sort("lastmod",1), 1 );
+        assert( cursor.get() );
         BSONObj o;
         if ( cursor->more() )
             o = cursor->next();

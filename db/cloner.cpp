@@ -172,9 +172,10 @@ namespace mongo {
             f.context = r._context;
             DBClientConnection *remote = dynamic_cast< DBClientConnection* >( conn.get() );
             if ( remote ) {
-                remote->query( boost::function<void(DBClientCursorBatchIterator &)>( f ), from_collection, query, 0, options );                
+                remote->query( boost::function<void(DBClientCursorBatchIterator &)>( f ), from_collection, query, 0, options );
             } else { // no exhaust mode for direct client, so we have this hack
                 auto_ptr<DBClientCursor> c = conn->query( from_collection, query, 0, 0, 0, options );
+                assert( c.get() );
                 while( c->more() ) {
                     DBClientCursorBatchIterator i( *c );
                     f( i );
@@ -195,6 +196,11 @@ namespace mongo {
                 }
             }
         }
+    }
+
+    bool copyCollectionFromRemote(const string& host, const string& ns, const BSONObj& query, string errmsg) {
+        Cloner c;
+        return c.copyCollection(host, ns, query, errmsg , /*copyIndexes*/ true);
     }
 
     bool Cloner::copyCollection( const string& from , const string& ns , const BSONObj& query , string& errmsg , bool copyIndexes ){

@@ -33,6 +33,7 @@ namespace mongo {
             {
                 ScopedDbConnection conn( configServer.getPrimary() );
                 auto_ptr<DBClientCursor> c = conn->query( ShardNS::shard , Query() );
+                assert( c.get() );
                 while ( c->more() ){
                     all.push_back( c->next().getOwned() );
                 }
@@ -97,7 +98,6 @@ namespace mongo {
             reload();
 
             scoped_lock lk( _mutex );
-            
             map<string,Shard>::iterator i = _lookup.find( ident );
             uassert( 13129 , (string)"can't find shard for: " + ident , i != _lookup.end() );
             return i->second;        
@@ -163,6 +163,17 @@ namespace mongo {
         staticShardInfo.getAllShards( all );
     }
 
+    bool Shard::isAShard( const string& ident ){
+        return staticShardInfo.isMember( ident );
+    }
+
+    void Shard::printShardInfo( ostream& out ){
+        vector<Shard> all;
+        getAllShards( all );
+        for ( unsigned i=0; i<all.size(); i++ )
+            out << all[i].toString() << "\n";
+        out.flush();
+    }
     
     BSONObj Shard::runCommand( const string& db , const BSONObj& cmd ) const {
         ScopedDbConnection conn( this );

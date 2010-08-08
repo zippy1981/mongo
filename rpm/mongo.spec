@@ -1,5 +1,5 @@
 Name: mongo
-Version: 1.5.7
+Version: 1.5.8
 Release: mongodb_1%{?dist}
 Summary: mongo client shell and tools
 License: AGPL 3.0
@@ -105,6 +105,7 @@ fi
 %{_bindir}/mongoimport
 %{_bindir}/mongorestore
 %{_bindir}/mongostat
+%{_bindir}/bsondump
 
 %{_mandir}/man1/mongo.1*
 %{_mandir}/man1/mongod.1*
@@ -129,11 +130,6 @@ fi
 %attr(0755,mongod,mongod) %dir /var/lib/mongo
 %attr(0755,mongod,mongod) %dir /var/log/mongo
 %attr(0640,mongod,mongod) %config(noreplace) %verify(not md5 size mtime) /var/log/mongo/mongod.log
-
-%files devel
-/usr/include/mongo
-%{_libdir}/libmongoclient.a
-#%{_libdir}/libmongotestfiles.a
 
 %changelog
 * Thu Jan 28 2010 Richard M Kreuter <richard@10gen.com>

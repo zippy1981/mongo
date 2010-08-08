@@ -300,7 +300,7 @@ namespace mongo {
                 }
             }
             
-            massert( 13415, "emptying the collection is not allowed", nrecords > 1 );
+            uassert( 13415, "emptying the collection is not allowed", nrecords > 1 );
             
             if ( !capLooped() ) {
                 theDataFileMgr.deleteRecord(ns, curr.rec(), curr, true);
@@ -345,6 +345,48 @@ namespace mongo {
                     cappedLastDelRecLastExtent() = i;
                 }
             }
+        }
+    }
+    
+    void NamespaceDetails::emptyCappedCollection( const char *ns ) {
+        DEV assert( this == nsdetails(ns) );
+        massert( 13424, "collection must be capped", capped );
+        massert( 13425, "background index build in progress", !backgroundIndexBuildInProgress );
+        massert( 13426, "indexes present", nIndexes == 0 );
+
+        ClientCursor::invalidate( ns );
+		NamespaceDetailsTransient::clearForPrefix( ns );
+
+        cappedLastDelRecLastExtent() = DiskLoc();
+        cappedListOfAllDeletedRecords() = DiskLoc();
+        
+        // preserve firstExtent/lastExtent
+        capExtent = firstExtent;
+        datasize = nrecords = 0;
+        // lastExtentSize preserve
+        // nIndexes preserve 0
+        // capped preserve true
+        // max preserve
+        paddingFactor = 1.0;
+        flags = 0;
+        capFirstNewRecord = DiskLoc();
+        capFirstNewRecord.setInvalid();
+        cappedLastDelRecLastExtent().setInvalid();
+        // dataFileVersion preserve
+        // indexFileVersion preserve
+        multiKeyIndexBits = 0;
+        reservedA = 0;
+        extraOffset = 0;
+        // backgroundIndexBuildInProgress preserve 0
+        memset(reserved, 0, sizeof(reserved));
+
+        for( DiskLoc ext = firstExtent; !ext.isNull(); ext = ext.ext()->xnext ) {
+            DiskLoc prev = ext.ext()->xprev;
+            DiskLoc next = ext.ext()->xnext;
+            DiskLoc empty = ext.ext()->reuse( ns );
+            ext.ext()->xprev = prev;
+            ext.ext()->xnext = next;
+            addDeletedRec( empty.drec(), empty );
         }
     }
 
