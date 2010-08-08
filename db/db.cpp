@@ -650,9 +650,9 @@ int main(int argc, char* argv[], char *envp[] )
     getcurns = ourgetns;
 
     po::options_description general_options("General options");
-	#if defined(_WIN32)
-	po::options_description windows_scm_options("Windows Service Control Manager options");
-	#endif
+#if defined(_WIN32)
+    po::options_description windows_scm_options("Windows Service Control Manager options");
+#endif
     po::options_description replication_options("Replication options");
     po::options_description sharding_options("Sharding options");
     po::options_description visible_options("Allowed options");
@@ -730,9 +730,9 @@ int main(int argc, char* argv[], char *envp[] )
 
     positional_options.add("command", 3);
     visible_options.add(general_options);
-	#if defined(_WIN32)
-	visible_options.add(windows_scm_options);
-	#endif
+#if defined(_WIN32)
+    visible_options.add(windows_scm_options);
+#endif
     visible_options.add(replication_options);
     visible_options.add(sharding_options);
     Module::addOptions( visible_options );
