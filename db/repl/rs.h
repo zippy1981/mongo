@@ -206,7 +206,7 @@ namespace mongo {
         }
         void noteRemoteIsPrimary(const Member *remote) { 
             scoped_lock lk(m);
-            if( !sp.state.secondary() )
+            if( !sp.state.secondary() && !sp.state.fatal() )
                 sp.state = MemberState::RS_RECOVERING;
             sp.primary = remote;
         }
@@ -256,20 +256,15 @@ namespace mongo {
         void endOldHealthTasks();
         void startHealthTaskFor(Member *m);
 
-    private:
         Consensus elect;
-        bool ok() const { return !box.getState().fatal(); }
-
         void relinquish();
         void forgetPrimary();
-
     protected:
         bool _stepDown();
     private:
         void assumePrimary();
         void loadLastOpTimeWritten();
         void changeState(MemberState s);
-
     protected:
         // "heartbeat message"
         // sent in requestHeartbeat respond in field "hbm" 
@@ -362,9 +357,10 @@ namespace mongo {
 
         /* call after constructing to start - returns fairly quickly after la[unching its threads */
         void go() { _go(); }
+
         void fatal() { _fatal(); }
-        bool isPrimary();
-        bool isSecondary();
+        bool isPrimary() { return box.getState().primary(); }
+        bool isSecondary() {  return box.getState().secondary(); }
         MemberState state() const { return ReplSetImpl::state(); }
         string name() const { return ReplSetImpl::name(); }
         const ReplSetConfig& config() { return ReplSetImpl::config(); }
@@ -424,15 +420,6 @@ namespace mongo {
     { 
         if( self )
             _hbinfo.health = 1.0;
-    }
-
-    inline bool ReplSet::isPrimary() {         
-        /* todo replset */
-        return box.getState().primary();
-    }
-
-    inline bool ReplSet::isSecondary() { 
-      return box.getState().secondary();
     }
 
 }

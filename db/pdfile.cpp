@@ -20,7 +20,6 @@
 todo:
 _ table scans must be sequential, not next/prev pointers
 _ coalesce deleted
-
 _ disallow system* manipulations from the database.
 */
 
@@ -114,7 +113,6 @@ namespace mongo {
     DataFileMgr theDataFileMgr;
     DatabaseHolder dbHolder;
     int MAGIC = 0x1000;
-//    int curOp = -2;
 
     extern int otherTraceLevel;
     void addNewNamespaceToCatalog(const char *ns, const BSONObj *options = 0);
@@ -142,11 +140,35 @@ namespace mongo {
         return ss.str();
     }
 
-    BSONObj::BSONObj(const Record *r) {
-        init(r->data, false);
-    }
-
     /*---------------------------------------------------------------------*/
+
+    // inheritable class to implement an operation that may be applied to all
+    // files in a database using _applyOpToDataFiles()
+    class FileOp {
+    public:
+        virtual ~FileOp() {}
+        // Return true if file exists and operation successful
+        virtual bool apply( const boost::filesystem::path &p ) = 0;
+        virtual const char * op() const = 0;
+    };
+
+    void _applyOpToDataFiles( const char *database, FileOp &fo, bool afterAllocator = false, const string& path = dbpath );
+
+    inline void _deleteDataFiles(const char *database) {
+        if ( directoryperdb ) {
+            BOOST_CHECK_EXCEPTION( boost::filesystem::remove_all( boost::filesystem::path( dbpath ) / database ) );
+            return;
+        }
+        class : public FileOp {
+            virtual bool apply( const boost::filesystem::path &p ) {
+                return boost::filesystem::remove( p );
+            }
+            virtual const char * op() const {
+                return "remove";
+            }
+        } deleter;
+        _applyOpToDataFiles( database, deleter, true );
+    }
 
     int initialExtentSize(int len) {
         long long sz = len * 16;
@@ -155,7 +177,6 @@ namespace mongo {
             sz = 1000000000;
         int z = ((int)sz) & 0xffffff00;
         assert( z > len );
-        //DEV tlog() << "initialExtentSize(" << len << ") returns " << z << endl;
         return z;
     }
 
@@ -175,21 +196,22 @@ namespace mongo {
             addNewNamespaceToCatalog(ns, options.isEmpty() ? 0 : &options);
 
         long long size = initialExtentSize(128);
-        BSONElement e = options.getField("size");
-        if ( e.isNumber() ) {
-            size = e.numberLong();
-            size += 256;
-            size &= 0xffffffffffffff00LL;
+        {
+            BSONElement e = options.getField("size");
+            if ( e.isNumber() ) {
+                size = e.numberLong();
+                size += 256;
+                size &= 0xffffffffffffff00LL;
+            }
         }
         
         uassert( 10083 ,  "invalid size spec", size > 0 );
 
         bool newCapped = false;
         int mx = 0;
-        e = options.getField("capped");
-        if ( e.type() == Bool && e.boolean() ) {
+        if( options.getBoolField("capped") ) {
             newCapped = true;
-            e = options.getField("max");
+            BSONElement e = options.getField("max");
             if ( e.isNumber() ) {
                 mx = e.numberInt();
             }
@@ -197,7 +219,7 @@ namespace mongo {
 
         // $nExtents just for debug/testing.  We create '$nExtents' extents,
         // each of size 'size'.
-        e = options.getField( "$nExtents" );
+        BSONElement e = options.getField( "$nExtents" );
         int nExtents = int( e.number() );
         Database *database = cc().database();
         if ( nExtents > 0 ) {
@@ -317,8 +339,7 @@ namespace mongo {
     void MongoDataFile::open( const char *filename, int minSize, bool preallocateOnly ) {
         {
             /* check quotas
-               very simple temporary implementation - we will in future look up
-               the quota from the grid database
+               very simple temporary implementation for now
             */
             if ( cmdLine.quota && fileNo > cmdLine.quotaFiles && !MMF::exists(filename) ) {
                 /* todo: if we were adding / changing keys in an index did we do some

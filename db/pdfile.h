@@ -412,34 +412,6 @@ namespace mongo {
 
 namespace mongo {
 
-    // Heritable class to implement an operation that may be applied to all
-    // files in a database using _applyOpToDataFiles()
-    class FileOp {
-    public:
-        virtual ~FileOp() {}
-        // Return true if file exists and operation successful
-        virtual bool apply( const boost::filesystem::path &p ) = 0;
-        virtual const char * op() const = 0;
-    };
-
-    void _applyOpToDataFiles( const char *database, FileOp &fo, bool afterAllocator = false, const string& path = dbpath );
-
-    inline void _deleteDataFiles(const char *database) {
-        if ( directoryperdb ) {
-            BOOST_CHECK_EXCEPTION( boost::filesystem::remove_all( boost::filesystem::path( dbpath ) / database ) );
-            return;
-        }
-        class : public FileOp {
-            virtual bool apply( const boost::filesystem::path &p ) {
-                return boost::filesystem::remove( p );
-            }
-            virtual const char * op() const {
-                return "remove";
-            }
-        } deleter;
-        _applyOpToDataFiles( database, deleter, true );
-    }
-
     boost::intmax_t dbSize( const char *database );
 
     inline NamespaceIndex* nsindex(const char *ns) {
@@ -463,10 +435,10 @@ namespace mongo {
         return nsindex(ns)->details(ns);
     }
 
-    inline MongoDataFile& DiskLoc::pdf() const {
+    /*inline MongoDataFile& DiskLoc::pdf() const {
         assert( fileNo != -1 );
         return *cc().database()->getFile(fileNo);
-    }
+    }*/
 
     inline Extent* DataFileMgr::getExtent(const DiskLoc& dl) {
         assert( dl.a() != -1 );
@@ -504,4 +476,9 @@ namespace mongo {
         
         return strcmp( ns, "local.oplog.$main" ) == 0;
     }
+
+    inline BSONObj::BSONObj(const Record *r) {
+        init(r->data, false);
+    }
+
 } // namespace mongo
