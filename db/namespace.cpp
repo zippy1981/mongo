@@ -31,6 +31,8 @@
 
 namespace mongo {
 
+    BOOST_STATIC_ASSERT( sizeof(Namespace) == 128 );
+
     BSONObj idKeyPattern = fromjson("{\"_id\":1}");
 
     /* deleted lists -- linked lists of deleted records -- are placed in 'buckets' of various sizes
@@ -371,7 +373,7 @@ namespace mongo {
                 if ( e == capExtent )
                     out() << " (capExtent)";
                 out() << '\n';
-                out() << "    magic: " << hex << e.ext()->magic << dec << " extent->ns: " << e.ext()->nsDiagnostic.buf << '\n';
+                out() << "    magic: " << hex << e.ext()->magic << dec << " extent->ns: " << e.ext()->nsDiagnostic.toString() << '\n';
                 out() << "    fr: " << e.ext()->firstRecord.toString() <<
                      " lr: " << e.ext()->lastRecord.toString() << " extent->len: " << e.ext()->length << '\n';
             }
@@ -589,7 +591,7 @@ namespace mongo {
 		details = todetails;
 		
 		BSONObj oldSpec;
-		char database[MaxDatabaseLen];
+		char database[MaxDatabaseNameLen];
 		nsToDatabase(from, database);
 		string s = database;
 		s += ".system.namespaces";
