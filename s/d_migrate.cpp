@@ -161,7 +161,7 @@ namespace mongo {
         }
         
         virtual void help( stringstream& help ) const {
-            help << "internal should not be calling this directly" << endl;
+            help << "internal - should not be called directly" << endl;
         }
         virtual bool slaveOk() const { return false; }
         virtual bool adminOnly() const { return true; }
@@ -295,6 +295,10 @@ namespace mongo {
             arr.done();
         }
 
+        /**
+         * called from the dest of a migrate
+         * transfers mods from src to dest
+         */
         bool transferMods( string& errmsg , BSONObjBuilder& b ){
             if ( ! _active ){
                 errmsg = "no active migration!";
@@ -304,9 +308,6 @@ namespace mongo {
             long long size = 0;
 
             {
-                readlock rl( _ns );
-                Client::Context cx( _ns );
-                
                 scoped_lock lk( _mutex );
                 xfer( &_deleted , b , "deleted" , size , false );
                 xfer( &_reload , b , "reload" , size , true );

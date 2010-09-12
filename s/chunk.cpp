@@ -22,7 +22,6 @@
 #include "grid.h"
 #include "../util/unittest.h"
 #include "../client/connpool.h"
-#include "../client/distlock.h"
 #include "../db/queryutil.h"
 #include "cursors.h"
 #include "strategy.h"
@@ -37,8 +36,6 @@ namespace mongo {
         }
         return true;
     }
-
-    RWLock chunkSplitLock("rw:chunkSplitLock");
 
     // -------  Shard --------
 
@@ -190,16 +187,18 @@ namespace mongo {
     }
     
     ChunkPtr Chunk::multiSplit( const vector<BSONObj>& m ){
+        dist_lock_try dlk( &_manager->_nsLock , string("split-") + toString() );
+        uassert( 10166 , "locking namespace failed" , dlk.got() );
+        return multiSplit_inlock( m );
+    }
+    
+    ChunkPtr Chunk::multiSplit_inlock( const vector<BSONObj>& m ){
         const size_t maxSplitPoints = 256;
 
         uassert( 10165 , "can't split as shard doesn't have a manager" , _manager );
         uassert( 13332 , "need a split key to split chunk" , !m.empty() );
         uassert( 13333 , "can't split a chunk in that many parts", m.size() < maxSplitPoints );
         uassert( 13003 , "can't split a chunk with only one distinct value" , _min.woCompare(_max) ); 
-
-        DistributedLock lockSetup( ConnectionString( modelServer() , ConnectionString::SYNC ) , getns() );
-        dist_lock_try dlk( &lockSetup , string("split-") + toString() );
-        uassert( 10166 , "locking namespace failed" , dlk.got() );
         
         {
             ShardChunkVersion onServer = getVersionOnConfigServer();
@@ -279,7 +278,7 @@ namespace mongo {
         }
 
         // Save the new key boundaries in the configDB.
-        _manager->save( false );
+        _manager->save( false /* does not inc 'major', ie no moves, in ShardChunkVersion control */);
 
         // Log all these changes in the configDB's log. We log a simple split differently than a multi-split.
         if ( newChunks.size() == 1) {
@@ -379,33 +378,38 @@ namespace mongo {
         if ( _dataWritten < splitThreshold / 5 )
             return false;
         
-        if ( ! chunkSplitLock.lock_try(0) )
-            return false;
-        
-        rwlock lk( chunkSplitLock , 1 , true );
+        ChunkPtr newShard;
+        {
+            // putting this in its own scope so moveIfShould is done outside
 
-        log(3) << "\t splitIfShould : " << *this << endl;
-
-        _dataWritten = 0;
-        
-        BSONObj splitPoint = pickSplitPoint();
-        if ( splitPoint.isEmpty() || _min == splitPoint || _max == splitPoint) {
-            error() << "want to split chunk, but can't find split point " 
-                    << " chunk: " << toString() << " got: " << splitPoint << endl;
-            return false;
+            dist_lock_try dlk( &_manager->_nsLock , string("split-") + toString() );
+            if ( ! dlk.got() )
+                return false;
+            
+            log(3) << "\t splitIfShould : " << *this << endl;
+            
+            _dataWritten = 0;
+            
+            BSONObj splitPoint = pickSplitPoint();
+            if ( splitPoint.isEmpty() || _min == splitPoint || _max == splitPoint) {
+                error() << "want to split chunk, but can't find split point " 
+                        << " chunk: " << toString() << " got: " << splitPoint << endl;
+                return false;
+            }
+            
+            long size = getPhysicalSize();
+            if ( size < splitThreshold )
+                return false;
+            
+            log() << "autosplitting " << _manager->getns() << " size: " << size << " shard: " << toString() 
+                  << " on: " << splitPoint << "(splitThreshold " << splitThreshold << ")" << endl;
+            
+            vector<BSONObj> splitPoints;
+            splitPoints.push_back( splitPoint );
+            newShard = multiSplit_inlock( splitPoints );
         }
-
-        long size = getPhysicalSize();
-        if ( size < splitThreshold )
-            return false;
         
-        log() << "autosplitting " << _manager->getns() << " size: " << size << " shard: " << toString() 
-              << " on: " << splitPoint << "(splitThreshold " << splitThreshold << ")" << endl;
-
-        vector<BSONObj> splitPoints;
-        splitPoints.push_back( splitPoint );
-        ChunkPtr newShard = multiSplit( splitPoints );
-
+        // since a chunk move is done by the donor shard, it should be responsible for locking the ns 
         moveIfShould( newShard );
         
         return true;
@@ -587,7 +591,8 @@ namespace mongo {
     ChunkManager::ChunkManager( DBConfig * config , string ns , ShardKeyPattern pattern , bool unique ) : 
         _config( config ) , _ns( ns ) , 
         _key( pattern ) , _unique( unique ) , 
-        _sequenceNumber(  ++NextSequenceNumber ), _lock("rw:ChunkManager")
+        _sequenceNumber(  ++NextSequenceNumber ), 
+        _lock("rw:ChunkManager"), _nsLock( ConnectionString( configServer.modelServer() , ConnectionString::SYNC ) , ns )
     {
         _reload_inlock();
         
@@ -632,10 +637,12 @@ namespace mongo {
             if (_chunkMap.size() < 10){ 
                 _printChunks();
             }
+            // TODO which one is it? millis or secs?
             sleepmillis(10 * (3-tries));
             sleepsecs(10);
         }
-        msgasserted(13282, "Couldn't load a valid config for " + _ns + " after 3 tries. Giving up");
+
+        msgasserted(13282, "Couldn't load a valid config for " + _ns + " after 3 attempts. Please try again.");
         
     }
 
@@ -644,6 +651,7 @@ namespace mongo {
         
         ScopedDbConnection conn( temp.modelServer() );
 
+        // TODO really need the sort?
         auto_ptr<DBClientCursor> cursor = conn->query(temp.getNS(), QUERY("ns" << _ns).sort("lastmod",1), 0, 0, 0, 0,
                 (DEBUG_BUILD ? 2 : 1000000)); // batch size. Try to induce potential race conditions in debug builds
         assert( cursor.get() );
@@ -840,8 +848,7 @@ namespace mongo {
 
         configServer.logChange( "dropCollection.start" , _ns , BSONObj() );
         
-        DistributedLock lockSetup( ConnectionString( configServer.modelServer() , ConnectionString::SYNC ) , getns() );
-        dist_lock_try dlk( &lockSetup  , "drop" );
+        dist_lock_try dlk( &_nsLock  , "drop" );
         uassert( 13331 ,  "collection's metadata is undergoing changes. Please try again." , dlk.got() );
         
         uassert( 10174 ,  "config servers not all up" , configServer.allUp() );
@@ -903,17 +910,19 @@ namespace mongo {
     
     void ChunkManager::save_inlock( bool major ){
         
-        ShardChunkVersion a = getVersion_inlock();
-        assert( a > 0 || _chunkMap.size() <= 1 );
-        ShardChunkVersion nextChunkVersion = a;
+        ShardChunkVersion version = getVersion_inlock();
+        assert( version > 0 || _chunkMap.size() <= 1 );
+        ShardChunkVersion nextChunkVersion = version;
         nextChunkVersion.inc( major );
 
         vector<ChunkPtr> toFix;
         vector<ShardChunkVersion> newVersions;
         
+        // Instead of upating the 'chunks' collection directly, we use the 'applyOps' command. It allows us 
+        // (a) to serialize the changes to that collection and (b) to only actually perform the update if this
+        // ChunkManager has the proper ShardChunkVersion.
         BSONObjBuilder cmdBuilder;
         BSONArrayBuilder updates( cmdBuilder.subarrayStart( "applyOps" ) );
-        
         
         int numOps = 0;
         for ( ChunkMap::const_iterator i=_chunkMap.begin(); i!=_chunkMap.end(); ++i ){
@@ -929,15 +938,19 @@ namespace mongo {
             toFix.push_back( c );
             newVersions.push_back( myVersion );
 
+            // build an update operation against the chunks collection of the config database with 
+            // upsert true
             BSONObjBuilder op;
             op.append( "op" , "u" );
             op.appendBool( "b" , true );
             op.append( "ns" , ShardNS::chunk );
 
+            // add the modified (new) chunk infomation as the update object
             BSONObjBuilder n( op.subobjStart( "o" ) );
-            c->serialize( n , myVersion );
+            c->serialize( n , myVersion ); // n will get full 'c' info plus version
             n.done();
 
+            // add the chunk's _id as the query part of the update statement
             BSONObjBuilder q( op.subobjStart( "o2" ) );
             q.append( "_id" , c->genID() );
             q.done();
@@ -950,19 +963,20 @@ namespace mongo {
         
         updates.done();
         
-        if ( a > 0 || _chunkMap.size() > 1 ){
+        if ( version > 0 || _chunkMap.size() > 1 ){
             BSONArrayBuilder temp( cmdBuilder.subarrayStart( "preCondition" ) );
             BSONObjBuilder b;
             b.append( "ns" , ShardNS::chunk );
             b.append( "q" , BSON( "query" << BSON( "ns" << _ns ) << "orderby" << BSON( "lastmod" << -1 ) ) );
             {
                 BSONObjBuilder bb( b.subobjStart( "res" ) );
-                bb.appendTimestamp( "lastmod" , a );
+                bb.appendTimestamp( "lastmod" , version );
                 bb.done();
             }
             temp.append( b.obj() );
             temp.done();
         }
+        // TODO preCondition for initial chunk or starting collection 
 
         BSONObj cmd = cmdBuilder.obj();
         
@@ -980,11 +994,12 @@ namespace mongo {
             msgasserted( 13327 , ss.str() );
         }
 
+        // instead of reloading, adjust ShardChunkVersion for the chunks that were updated in the configdb
         for ( unsigned i=0; i<toFix.size(); i++ ){
             toFix[i]->_lastmod = newVersions[i];
         }
 
-        massert( 10417 ,  "how did version get smalled" , getVersion_inlock() >= a );
+        massert( 10417 ,  "how did version get smalled" , getVersion_inlock() >= version );
         
         ensureIndex_inlock(); // TODO: this is too aggressive - but not really sooo bad
     }

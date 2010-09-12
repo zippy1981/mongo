@@ -1,4 +1,4 @@
-// sock.cpp
+// @file sock.cpp
 
 /*    Copyright 2009 10gen Inc.
  *
@@ -17,6 +17,8 @@
 
 #include "pch.h"
 #include "sock.h"
+#include "hostandport.h"
+#include "../client/dbclient.h"
 
 namespace mongo {
 
@@ -25,6 +27,15 @@ namespace mongo {
     static bool ipv6 = false;
     void enableIPv6(bool state) { ipv6 = state; }
     bool IPv6Enabled() { return ipv6; }
+
+    string getAddrInfoStrError(int code) { 
+#if !defined(_WIN32)
+        return gai_strerror(code);
+#else
+        /* gai_strerrorA is not threadsafe on windows. don't use it. */
+        return errnoWithDescription(code);
+#endif
+    }
 
     SockAddr::SockAddr(int sourcePort) {
         memset(as<sockaddr_in>().sin_zero, 0, sizeof(as<sockaddr_in>().sin_zero));
@@ -196,6 +207,55 @@ namespace mongo {
         return _instance;
     }
 
+    bool ListeningSockets::listeningOn(const HostAndPort& addr) { 
+        assert(get()->isReady()); // this shouldn't be called before server is ready
+
+        if( addr.port() != cmdLine.port )
+            return false;
+
+        static map<string, bool> isSelfCache; // host, isSelf
+
+        map<string, bool>::const_iterator it = isSelfCache.find(addr.host());
+        if (it != isSelfCache.end()){
+            return it->second;
+        }
+
+        bool ret = false;
+
+        try {
+            DBClientConnection c (false, NULL, 0.1); // 100ms timeout
+            c.connect(addr.toString());
+
+            BSONObj out;
+            if (c.runCommand("admin", BSON("_serverID"<<1), out) && out["serverID"].OID() == getServerID()){
+                ret = true;
+            }
+        } catch (...) {
+            /* ignore - if failed can't be one of my addresses */
+        }
+
+        if (!ret){
+            SockAddr a (addr.host().c_str(), 0);
+
+            string ip = a.getAddr();
+
+            if (startsWith(ip, "127.") || ip == "::1"){
+                log() << "warning: hostname \"" << addr.host() << "\" resolves to a local address (" << ip << ") not listed in --bind_ip" << endl;
+            }
+        }
+
+        isSelfCache[addr.host()] = ret;
+
+        return ret;
+    }
+
+    const OID& getServerID(){
+        static OID serverID;
+        ONCE {
+            serverID.init();
+        }
+        return serverID;
+    }
     
     string getHostNameCached(){
         static string host;

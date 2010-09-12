@@ -1,4 +1,4 @@
-// sock.h
+// @file sock.h
 
 /*    Copyright 2009 10gen Inc.
  *
@@ -26,18 +26,15 @@
 
 namespace mongo {
 
+    struct HostAndPort;
     const int SOCK_FAMILY_UNKNOWN_ERROR=13078;
+    string getAddrInfoStrError(int code);
 
 #if defined(_WIN32)
 
     typedef short sa_family_t;
     typedef int socklen_t;
-    inline int getLastError() {
-        return WSAGetLastError();
-    }
-    inline const char* gai_strerror(int code) {
-        return ::gai_strerrorA(code);
-    }
+    inline int getLastError() { return WSAGetLastError(); }
     inline void disableNagle(int sock) {
         int x = 1;
         if ( setsockopt(sock, IPPROTO_TCP, TCP_NODELAY, (char *) &x, sizeof(x)) )
@@ -45,8 +42,7 @@ namespace mongo {
         if ( setsockopt(sock, SOL_SOCKET, SO_KEEPALIVE, (char *) &x, sizeof(x)) )
             out() << "ERROR: SO_KEEPALIVE failed" << endl;
     }
-    inline void prebindOptions( int sock ) {
-    }
+    inline void prebindOptions( int sock ) { }
 
     // This won't actually be used on windows
     struct sockaddr_un {
@@ -177,7 +173,7 @@ namespace mongo {
                     const int buflen=128;
                     char buffer[buflen];
                     int ret = getnameinfo(raw(), addressSize, buffer, buflen, NULL, 0, NI_NUMERICHOST);
-                    massert(13082, gai_strerror(ret), ret == 0);
+                    massert(13082, getAddrInfoStrError(ret), ret == 0);
                     return buffer;
                 }
 
@@ -251,9 +247,11 @@ namespace mongo {
 
     string getHostNameCached();
 
+    const OID& getServerID();
+
     class ListeningSockets {
     public:
-        ListeningSockets() : _mutex("ListeningSockets"), _sockets( new set<int>() ) { }
+        ListeningSockets() : _mutex("ListeningSockets"), _sockets( new set<int>() ), _ready(false) { }
         void add( int sock ){
             scoped_lock lk( _mutex );
             _sockets->insert( sock );
@@ -275,11 +273,20 @@ namespace mongo {
                 closesocket( sock );
             }            
         }
+
+        void setReady() { _ready = true; }
+        bool isReady() { return _ready; }
+
         static ListeningSockets* get();
+
+        /* returns true if the host/port combo identifies this process instance. */
+        static bool listeningOn(const HostAndPort& addr);
     private:
         mongo::mutex _mutex;
         set<int>* _sockets;
         static ListeningSockets* _instance;
+
+        volatile bool _ready;
     };
 
 } // namespace mongo
