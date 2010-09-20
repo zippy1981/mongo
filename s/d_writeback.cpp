@@ -68,10 +68,16 @@ namespace mongo {
             }
             
             const OID id = e.__oid();
-            BSONObj z = getWritebackQueue(id.str())->blockingPop();
-            log(1) << "WriteBackCommand got : " << z << endl;
             
-            result.append( "data" , z );
+            // we want to do something every 5 minutes so sockets don't timeout
+            BSONObj z;
+            if ( getWritebackQueue(id.str())->blockingPop( z, 5 * 60 /* 5 minutes */ ) ) {
+                log(1) << "WriteBackCommand got : " << z << endl;
+                result.append( "data" , z );
+            }
+            else {
+                result.appendBool( "noop" , true );
+            }
             
             return true;
         }

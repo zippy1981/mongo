@@ -245,6 +245,7 @@ namespace mongo {
             help << "enable or disable performance profiling\n";
             help << "{ profile : <n> }\n";
             help << "0=off 1=log slow ops 2=log all\n";
+            help << "-1 to get current values\n";
             help << "http://www.mongodb.org/display/DOCS/Database+Profiler";
         }
         virtual LockType locktype() const { return WRITE; } 
@@ -409,8 +410,11 @@ namespace mongo {
             if ( ! authed )
                 result.append( "note" , "run against admin for more info" );
             
-            if ( Listener::getElapsedTimeMillis() - start > 1000 )
-                result.append( "timing" , timeBuilder.obj() );
+            if ( Listener::getElapsedTimeMillis() - start > 1000 ){
+                BSONObj t = timeBuilder.obj();
+                log() << "serverStatus was very slow: " << t << endl;
+                result.append( "timing" , t );
+            }
 
             return true;
         }

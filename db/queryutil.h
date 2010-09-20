@@ -59,8 +59,6 @@ namespace mongo {
         FieldRange( const BSONElement &e = BSONObj().firstElement() , bool isNot=false , bool optimize=true );
         const FieldRange &operator&=( const FieldRange &other );
         const FieldRange &operator|=( const FieldRange &other );
-        // does not remove fully contained ranges (eg [1,3] - [2,2] doesn't remove anything)
-        // in future we can change so that an or on $in:[3] combined with $gt:2 doesn't scan 3 a second time
         const FieldRange &operator-=( const FieldRange &other );
         // true iff other includes this
         bool operator<=( const FieldRange &other );
@@ -238,6 +236,18 @@ namespace mongo {
         }
         QueryPattern pattern( const BSONObj &sort = BSONObj() ) const;
         string getSpecial() const;
+        // Btree scanning for a multidimentional key range will yield a 
+        // multidimensional box.  The idea here is that if an 'other'
+        // multidimensional box contains the current box we don't have to scan
+        // the current box.  If the 'other' box contains the current box in
+        // all dimensions but one, we can safely subtract the values of 'other'
+        // along that one dimension from the values for the current box on the
+        // same dimension.  In other situations, subtracting the 'other'
+        // box from the current box yields a result that is not a box (but
+        // rather can be expressed as a union of boxes).  We don't support
+        // such splitting currently in calculating index ranges.  Note that
+        // where I have said 'box' above, I actually mean sets of boxes because
+        // a field range can consist of multiple intervals.
         const FieldRangeSet &operator-=( const FieldRangeSet &other ) {
             int nUnincluded = 0;
             string unincludedKey;
@@ -476,19 +486,24 @@ namespace mongo {
         // this could invalidate the result of the last topFrs()
         void popOrClause() {
             massert( 13274, "no or clause to pop", !orFinished() );
-            const FieldRangeSet &toPop = _orSets.front();
+            const FieldRangeSet &toDiff = _originalOrSets.front();
             list< FieldRangeSet >::iterator i = _orSets.begin();
+            list< FieldRangeSet >::iterator j = _originalOrSets.begin();
             ++i;
+            ++j;
             while( i != _orSets.end() ) {
-                *i -= toPop;
+                *i -= toDiff;
                 if( !i->matchPossible() ) {
                     i = _orSets.erase( i );
+                    j = _originalOrSets.erase( j );
                 } else {    
                     ++i;
+                    ++j;
                 }
             }
-            _oldOrSets.push_front( toPop );
+            _oldOrSets.push_front( _orSets.front() );
             _orSets.pop_front();
+            _originalOrSets.pop_front();
         }
         FieldRangeSet *topFrs() const {
             FieldRangeSet *ret = new FieldRangeSet( _baseSet );
@@ -496,6 +511,16 @@ namespace mongo {
                 *ret &= _orSets.front();
             }
             return ret;
+        }
+        // while the original bounds are looser, they are composed of fewer
+        // ranges and it is faster to do operations with them; when they can be
+        // used instead of more precise bounds, they should
+        FieldRangeSet *topFrsOriginal() const {
+            FieldRangeSet *ret = new FieldRangeSet( _baseSet );
+            if (_originalOrSets.size()){
+                *ret &= _originalOrSets.front();
+            }
+            return ret;            
         }
         void allClausesSimplified( vector< BSONObj > &ret ) const {
             for( list< FieldRangeSet >::const_iterator i = _orSets.begin(); i != _orSets.end(); ++i ) {
@@ -510,6 +535,7 @@ namespace mongo {
     private:
         FieldRangeSet _baseSet;
         list< FieldRangeSet > _orSets;
+        list< FieldRangeSet > _originalOrSets;
         list< FieldRangeSet > _oldOrSets; // make sure memory is owned
         bool _orFound;
     };

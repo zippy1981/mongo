@@ -22,6 +22,7 @@
 #include "client.h"
 #include "../bson/util/atomic_int.h"
 #include "../util/concurrency/spin_lock.h"
+#include "../util/time_support.h"
 #include "db.h"
 
 namespace mongo { 
@@ -38,7 +39,7 @@ namespace mongo {
     
     class CachedBSONObj {
     public:
-
+        enum { TOO_BIG_SENTINEL = 1 } ;
         static BSONObj _tooBig; // { $msg : "query not recording (too large)" }
 
         CachedBSONObj(){
@@ -56,7 +57,7 @@ namespace mongo {
                 int sz = o.objsize();
                 
                 if ( sz > (int) sizeof(_buf) ) { 
-                    reset(1); // flag as too big and return
+                    reset(TOO_BIG_SENTINEL);
                 }
                 else {
                     memcpy(_buf, o.objdata(), sz );
@@ -109,16 +110,12 @@ namespace mongo {
         /** you have to be locked when you call this */
         BSONObj _get( bool getCopy ){
             int sz = size();
-
             if ( sz == 0 )
                 return BSONObj();
-            
-            if ( sz == 1 )
+            if ( sz == TOO_BIG_SENTINEL )
                 return _tooBig;
-            
             return BSONObj( _buf ).copy();
         }
-
 
         SpinLock _lock;
         char _buf[512];
@@ -363,6 +360,18 @@ namespace mongo {
                     uasserted(11601,"interrupted");
                 }
             }
+        }
+        
+        const char *checkForInterruptNoAssert() {
+            if( state != Off ) { 
+                if( state == All ) 
+                    return "interrupted at shutdown";
+                if( cc().curop()->opNum() == toKill ) { 
+                    state = Off;
+                    return "interrupted";
+                }
+            }
+            return "";
         }
     } killCurrentOp;
 }

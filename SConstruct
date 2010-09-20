@@ -10,6 +10,8 @@
 #      scons --distname=0.8 s3dist
 #      all s3 pushes require settings.py and simples3
 
+EnsureSConsVersion(0, 98, 4) # this is a common version known to work
+
 import os
 import sys
 import imp
@@ -453,7 +455,7 @@ serverOnlyFiles += [ "db/dbcommands.cpp" , "db/dbcommands_admin.cpp" ]
 coreServerFiles += Glob( "db/stats/*.cpp" )
 serverOnlyFiles += [ "db/driverHelpers.cpp" ]
 
-scriptingFiles = [ "scripting/engine.cpp" , "scripting/utils.cpp" ]
+scriptingFiles = [ "scripting/engine.cpp" , "scripting/utils.cpp" , "scripting/bench.cpp" ]
 
 if usesm:
     scriptingFiles += [ "scripting/engine_spidermonkey.cpp" ]
@@ -775,6 +777,11 @@ if nix:
         env['ENV']['GLIBCXX_FORCE_NEW'] = 1; # play nice with valgrind
     else:
         env.Append( CPPFLAGS=" -O3" )
+        #env.Append( CPPFLAGS=" -fprofile-generate" )
+        #env.Append( LINKFLAGS=" -fprofile-generate" )
+        # then:
+        #env.Append( CPPFLAGS=" -fprofile-use" )
+        #env.Append( LINKFLAGS=" -fprofile-use" )        
 
     if debugLogging:
         env.Append( CPPFLAGS=" -D_DEBUG" );

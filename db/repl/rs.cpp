@@ -66,10 +66,13 @@ namespace mongo {
         if( box.getState().primary() ) {
             log() << "replSet relinquishing primary state" << rsLog;
             changeState(MemberState::RS_RECOVERING);
+            // SERVER-1681:
+            //changeState(MemberState::RS_SECONDARY);
             
             /* close sockets that were talking to us */
-            /*log() << "replSet closing sockets after reqlinquishing primary" << rsLog;
-            MessagingPort::closeAllSockets(1);*/
+            // [dm] do we want to do this?  not sure.
+            //log() << "replSet closing sockets after reqlinquishing primary" << rsLog;
+            //MessagingPort::closeAllSockets(1);*/
 
             // todo: >
             //changeState(MemberState::RS_SECONDARY);
@@ -89,10 +92,13 @@ namespace mongo {
         }
     }
 
+    // for the replSetStepDown command
     bool ReplSetImpl::_stepDown() { 
         lock lk(this);
+        // **TODO** should this just set elect.steppedDown and call relinquish()???  seems that would be better
         if( box.getState().primary() ) { 
             changeState(MemberState::RS_RECOVERING);
+            //changeState(MemberState::RS_SECONDARY);
             elect.steppedDown = time(0) + 60;
             log() << "replSet info stepped down as primary" << rsLog;
             return true;
@@ -205,7 +211,7 @@ namespace mongo {
                 uassert(13096, "bad --replSet command line config string - dups?", seedSet.count(m) == 0 );
                 seedSet.insert(m);
                 //uassert(13101, "can't use localhost in replset host list", !m.isLocalHost());
-                if( ListeningSockets::listeningOn(m) ) {
+                if( m.isSelf() ) {
                     log(1) << "replSet ignoring seed " << m.toString() << " (=self)" << rsLog;
                 } else
                     seeds.push_back(m);
@@ -239,7 +245,7 @@ namespace mongo {
             replSetCmdline.seedSet.erase(m->h());
         }
         for( set<HostAndPort>::iterator i = replSetCmdline.seedSet.begin(); i != replSetCmdline.seedSet.end(); i++ ) {
-            if( ListeningSockets::listeningOn(*i) ) {
+            if( i->isSelf() ) {
                 if( sss == 1 ) 
                     log(1) << "replSet warning self is listed in the seed list and there are no other seeds listed did you intend that?" << rsLog;
             } else
@@ -304,7 +310,7 @@ namespace mongo {
             int me = 0;
             for( vector<ReplSetConfig::MemberCfg>::iterator i = c.members.begin(); i != c.members.end(); i++ ) { 
                 const ReplSetConfig::MemberCfg& m = *i;
-                if( ListeningSockets::listeningOn(m.h) ) {
+                if( m.h.isSelf() ) {
                     nfound++;
                     me++;
                     if( !reconf || (_self && _self->id() == (unsigned) m._id) )
@@ -380,7 +386,7 @@ namespace mongo {
         for( vector<ReplSetConfig::MemberCfg>::iterator i = _cfg->members.begin(); i != _cfg->members.end(); i++ ) { 
             const ReplSetConfig::MemberCfg& m = *i;
             Member *mi;
-            if( ListeningSockets::listeningOn(m.h) ) {
+            if( m.h.isSelf() ) {
                 assert( _self == 0 );
                 mi = _self = new Member(m.h, m._id, &m, true);
                 if( (int)mi->id() == oldPrimaryId )
@@ -550,20 +556,6 @@ namespace mongo {
     */
     void startReplSets(ReplSetCmdline *replSetCmdline) {
         Client::initThread("startReplSets");
-
-        // Wait for network layer to be ready
-        for (int i=0; true; i++){
-            if (ListeningSockets::get()->isReady())
-                break;
-
-            massert(13466, "Network layer not up after 5 minutes. Giving up", i < 5*60);
-
-            if (i && i%10 == 0)
-                log() << "Network layer not up after " << i << " seconds. Will keep trying" << endl;
-
-            sleepsecs(1);
-        }
-
         try { 
             assert( theReplSet == 0 );
             if( replSetCmdline == 0 ) {

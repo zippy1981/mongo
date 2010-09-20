@@ -66,8 +66,22 @@ namespace mongo {
             int num = 0;
             NamespaceDetails *d = nsdetails(ns);
             int idxNo = d->idxNo(*id);
-            for( BtreeCursor c( d, idxNo, *id, min, max, false, 1 ); c.ok(); c.advance(), ++num );
+            
+            // only yielding on firt half for now
+            // after this it should be in ram, so 2nd should be fast
+            {
+                shared_ptr<Cursor> c( new BtreeCursor( d, idxNo, *id, min, max, false, 1 ) );
+                scoped_ptr<ClientCursor> cc( new ClientCursor( QueryOption_NoCursorTimeout , c , ns ) );
+                while ( c->ok() ){
+                    num++;
+                    c->advance();
+                    if ( ! cc->yieldSometimes() )
+                        break;
+                }
+            }
+            
             num /= 2;
+            
             BtreeCursor c( d, idxNo, *id, min, max, false, 1 );
             for( ; num; c.advance(), --num );
 
@@ -113,12 +127,14 @@ namespace mongo {
                 "Internal command.\n"
                 "example: { splitVector : \"blog.post\" , keyPattern:{x:1} , min:{x:10} , max:{x:20}, maxChunkSize:200 }\n"
                 "maxChunkSize unit in MBs\n"
+                "May optionally specify 'maxSplitPoints' and 'maxChunkObjects' to avoid traversing the whole chunk\n"
                 "NOTE: This command may take a while to run";
         }
         bool run(const string& dbname, BSONObj& jsobj, string& errmsg, BSONObjBuilder& result, bool fromRepl ){
             const char* ns = jsobj.getStringField( "splitVector" );
             BSONObj keyPattern = jsobj.getObjectField( "keyPattern" );
 
+            // If min and max are not provided use the "minKey" and "maxKey" for the sharding key pattern.
             BSONObj min = jsobj.getObjectField( "min" );
             BSONObj max = jsobj.getObjectField( "max" );
             if ( min.isEmpty() && max.isEmpty() ){
@@ -134,18 +150,41 @@ namespace mongo {
                 errmsg = "either provide both min and max or leave both empty";
                 return false;
             }
-
+            
             long long maxChunkSize = 0;
-            BSONElement maxSizeElem = jsobj[ "maxChunkSize" ];
-            if ( maxSizeElem.eoo() ){
-                errmsg = "need to specify the desired max chunk size";
-                return false;
+            {
+                BSONElement maxSizeElem = jsobj[ "maxChunkSize" ];
+                if ( maxSizeElem.isNumber() ){
+                    maxChunkSize = maxSizeElem.numberLong() * 1<<20; 
+                }
+                else {
+                    maxSizeElem = jsobj["maxChunkSizeBytes"];
+                    if ( maxSizeElem.isNumber() ){
+                        maxChunkSize = maxSizeElem.numberLong();
+                    }
+                }
+                
+                if ( maxChunkSize <= 0 ){
+                    errmsg = "need to specify the desired max chunk size (maxChunkSize or maxChunkSizeBytes)";
+                    return false;
+                }
             }
-            maxChunkSize = maxSizeElem.numberLong() * 1<<20; 
 
+            long long maxSplitPoints = 0;
+            BSONElement maxSplitPointsElem = jsobj[ "maxSplitPoints" ];
+            if ( maxSplitPointsElem.isNumber() ){
+                maxSplitPoints = maxSplitPointsElem.numberLong();
+            }
+
+            long long maxChunkObjects = 0;
+            BSONElement MaxChunkObjectsElem = jsobj[ "maxChunkObjects" ];
+            if ( MaxChunkObjectsElem.isNumber() ){
+                maxChunkObjects = MaxChunkObjectsElem.numberLong();
+            }
+
+            // Get the size estimate for this namespace
             Client::Context ctx( ns );
             NamespaceDetails *d = nsdetails( ns );
-            
             if ( ! d ){
                 errmsg = "ns not found";
                 return false;
@@ -157,21 +196,25 @@ namespace mongo {
                 return false;
             }
 
-            // If there's not enough data for more than one chunk, no point continuing.
+            const long long recCount = d->nrecords;
             const long long dataSize = d->datasize;
-            if ( dataSize < maxChunkSize ) {
+            
+            // If there's not enough data for more than one chunk, no point continuing.
+            if ( dataSize < maxChunkSize || recCount == 0 ) {
                 vector<BSONObj> emptyVector;
                 result.append( "splitKeys" , emptyVector );
                 return true;
             }
 
             // We'll use the average object size and number of object to find approximately how many keys
-            // each chunk should have. We'll split at half the maxChunkSize.
-            const long long recCount = d->nrecords;
-            long long keyCount = 0;
-            if (( dataSize > 0 ) && ( recCount > 0 )){
-                const long long avgRecSize = dataSize / recCount;
-                keyCount = maxChunkSize / (2 * avgRecSize);
+            // each chunk should have. We'll split at half the maxChunkSize or maxChunkObjects, if 
+            // provided.
+            const long long avgRecSize = dataSize / recCount;
+            long long keyCount = maxChunkSize / (2 * avgRecSize);
+            if ( maxChunkObjects && ( maxChunkObjects < keyCount ) ) {
+                log() << "limiting split vector to " << maxChunkObjects << " (from " << keyCount << ") objects for chunk "
+                      << ns << " " << min << "-->>" << max << endl;
+                keyCount = maxChunkObjects;
             }
 
             // We traverse the index and add the keyCount-th key to the result vector. If that key
@@ -179,25 +222,46 @@ namespace mongo {
             // instances of a key value live in the same chunk.
             Timer timer;
             long long currCount = 0;
+            long long numChunks = 0;
             vector<BSONObj> splitKeys;
             BSONObj currKey;
-            BtreeCursor c( d , d->idxNo(*idx) , *idx , min , max , false , 1 );
+            
+            BtreeCursor * bc = new BtreeCursor( d , d->idxNo(*idx) , *idx , min , max , false , 1 );
+            shared_ptr<Cursor> c( bc );
+            scoped_ptr<ClientCursor> cc( new ClientCursor( QueryOption_NoCursorTimeout , c , ns ) );
 
-            while ( c.ok() ){ 
+            while ( cc->ok() ){ 
                 currCount++;
                 if ( currCount > keyCount ){
-                    if ( ! currKey.isEmpty() && (currKey.woCompare( c.currKey() ) == 0 ) ) 
-                         continue;
-
-                    currKey = c.currKey();
-                    splitKeys.push_back( c.prettyKey( currKey ) );
-                    currCount = 0;
+                    if ( currKey.isEmpty() || currKey.woCompare( c->currKey() ) ){ 
+                        currKey = c->currKey();
+                        splitKeys.push_back( bc->prettyKey( currKey ) );
+                        currCount = 0;
+                        numChunks++;
+                        log(4) << "picked a split key: " << currKey << endl;
+                    }
                 }
-                c.advance();
+                cc->advance();
+
+                // Stop if we have enough split points.
+                if ( maxSplitPoints && ( numChunks >= maxSplitPoints ) ){
+                    log(1) << "max number of requested split points reached (" << numChunks 
+                           << ") before the end of chunk " << ns << " " << min << "-->>" << max 
+                           << endl;
+                    break;
+                }
+                
+                if ( ! cc->yieldSometimes() ){
+                    // we were near and and got pushed to the end
+                    // i think returning the splits we've already found is fine
+                    bc = NULL; // defensive
+                    break;
+                }
             }
 
             ostringstream os;
-            os << "Finding the split vector for " <<  ns << " over "<< keyPattern;
+            os << "Finding the split vector for " <<  ns << " over "<< keyPattern 
+               << " keyCount: " << keyCount << " numSplits: " << splitKeys.size();
             logIfSlow( timer , os.str() );
 
             // Warning: we are sending back an array of keys but are currently limited to 

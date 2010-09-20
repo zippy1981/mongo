@@ -46,6 +46,7 @@
 #include "../util/processinfo.h"
 #include "../util/text.h"
 #include "../util/heapcheck.h"
+#include "../util/time_support.h"
 
 namespace mongo {
 #ifdef _WIN32
@@ -54,6 +55,7 @@ namespace mongo {
     inline int pipe(int fds[2]) { return _pipe(fds, 4096, _O_TEXT | _O_NOINHERIT); }
 #endif
 
+    // these functions have not been audited for thread safety - currently they are called with an exclusive js mutex
     namespace shellUtils {
 
         Scope* theScope = 0;
@@ -895,6 +897,7 @@ namespace mongo {
         
         //   connstr, myuris
         map< string, set<string> > _allMyUris;
+        mongo::mutex _allMyUrisMutex("_allMyUrisMutex");
         bool _nokillop = false;
         void onConnect( DBClientWithCommands &c ) {
             if ( _nokillop ) {
@@ -903,6 +906,7 @@ namespace mongo {
             BSONObj info;
             if ( c.runCommand( "admin", BSON( "whatsmyuri" << 1 ), info ) ) {
                 string connstr = dynamic_cast<DBClientBase&>(c).getServerAddress();
+                mongo::mutex::scoped_lock lk( _allMyUrisMutex );
                 _allMyUris[connstr].insert(info[ "you" ].str());
             }
         }

@@ -82,41 +82,55 @@ namespace mongo {
     bool Chunk::maxIsInf() const {
         return _manager->getShardKey().globalMax().woCompare( getMax() ) == 0;
     }
-    
-    BSONObj Chunk::pickSplitPoint() const{
-        int sort = 0;
-        
-        if ( minIsInf() ){
-            sort = 1;
-        }
-        else if ( maxIsInf() ){
-            sort = -1;
-        }
-        
-        if ( sort ){
-            ShardConnection conn( getShard().getConnString() , _manager->getns() );
-            Query q;
-            if ( sort == 1 )
-                q.sort( _manager->getShardKey().key() );
-            else {
-                BSONObj k = _manager->getShardKey().key();
-                BSONObjBuilder r;
-                
-                BSONObjIterator i(k);
-                while( i.more() ) {
-                    BSONElement e = i.next();
-                    uassert( 10163 ,  "can only handle numbers here - which i think is correct" , e.isNumber() );
-                    r.append( e.fieldName() , -1 * e.number() );
-                }
-                
-                q.sort( r.obj() );
-            }
-            BSONObj end = conn->findOne( _manager->getns() , q );
-            conn.done();
 
-            if ( ! end.isEmpty() )
-                return _manager->getShardKey().extractKey( end );
+    BSONObj Chunk::_getExtremeKey( int sort ) const {
+        ShardConnection conn( getShard().getConnString() , _manager->getns() );
+        Query q;
+        if ( sort == 1 ) {
+            q.sort( _manager->getShardKey().key() );
         }
+        else {
+            // need to invert shard key pattern to sort backwards
+            // TODO: make a helper in ShardKeyPattern?
+
+            BSONObj k = _manager->getShardKey().key();
+            BSONObjBuilder r;
+            
+            BSONObjIterator i(k);
+            while( i.more() ) {
+                BSONElement e = i.next();
+                uassert( 10163 ,  "can only handle numbers here - which i think is correct" , e.isNumber() );
+                r.append( e.fieldName() , -1 * e.number() );
+            }
+            
+            q.sort( r.obj() );
+        }
+        
+        // find the extreme key
+        BSONObj end = conn->findOne( _manager->getns() , q );
+        conn.done();
+        
+        if ( end.isEmpty() )
+            return BSONObj();
+        
+        return _manager->getShardKey().extractKey( end );
+    }
+    
+    BSONObj Chunk::pickSplitPoint( const vector<BSONObj> * possibleSplitPoints ) const {
+        
+        // check to see if we're at the edge of the key range
+        // if so, split on the edge for sequential insertion efficienc
+
+        if ( minIsInf() ) 
+            return _getExtremeKey( 1 );
+        if ( maxIsInf() )
+            return _getExtremeKey( -1 );
+
+        // we're not at an edge, so use the hint if we have one
+        if ( possibleSplitPoints && possibleSplitPoints->size() )
+            return possibleSplitPoints->at(0);
+        
+        // no edge, no hint, so find the median of the range
         
         BSONObj cmd = BSON( "medianKey" << _manager->getns()
                             << "keyPattern" << _manager->getShardKey().key()
@@ -133,7 +147,12 @@ namespace mongo {
 
         BSONObj median = result.getObjectField( "median" ).getOwned();
 
-        if (median == getMin()){
+        if ( median == getMin() ) {
+            // if the median is the same as the min
+            // we don't want to split on the median, 
+            // but the maximum real value
+            // otherwise we'll never be able to split up a chunk with lots of key dups
+
             Query q;
             q.minKey(_min).maxKey(_max);
             q.sort(_manager->getShardKey().key());
@@ -143,7 +162,8 @@ namespace mongo {
         }
         
         conn.done();
-
+        
+        // sanity check median - purely defensive
         if ( median < getMin() || median >= getMax() ){
             stringstream ss;
             ss << "medianKey returned value out of range.  " 
@@ -155,7 +175,7 @@ namespace mongo {
         return median;
     }
 
-    void Chunk::pickSplitVector( vector<BSONObj>* splitPoints , int chunkSize /* in bytes */) const { 
+    void Chunk::pickSplitVector( vector<BSONObj>& splitPoints , int chunkSize /* bytes */, int maxPoints, int maxObjs ) const { 
         // Ask the mongod holding this chunk to figure out the split points.
         ScopedDbConnection conn( getShard().getConnString() );
         BSONObj result;
@@ -164,7 +184,9 @@ namespace mongo {
         cmd.append( "keyPattern" , _manager->getShardKey().key() );
         cmd.append( "min" , getMin() );
         cmd.append( "max" , getMax() );
-        cmd.append( "maxChunkSize" , chunkSize / (1<<20) /* in MBs */ );
+        cmd.append( "maxChunkSizeBytes" , chunkSize );
+        cmd.append( "maxSplitPoints" , maxPoints );
+        cmd.append( "maxChunkObjects" , maxObjs );
         BSONObj cmdObj = cmd.obj();
 
         if ( ! conn->runCommand( "admin" , cmdObj , result )){
@@ -175,7 +197,7 @@ namespace mongo {
 
         BSONObjIterator it( result.getObjectField( "splitKeys" ) );
         while ( it.more() ){
-            splitPoints->push_back( it.next().Obj().getOwned() );
+            splitPoints.push_back( it.next().Obj().getOwned() );
         }
         conn.done();
     }
@@ -311,7 +333,7 @@ namespace mongo {
         return newChunks[0];
     }
 
-    bool Chunk::moveAndCommit( const Shard& to , string& errmsg ){
+    bool Chunk::moveAndCommit( const Shard& to , BSONObj& res ){
         uassert( 10167 ,  "can't move shard to its current location!" , getShard() != to );
         
         log() << "moving chunk ns: " << _manager->getns() << " moving ( " << toString() << ") " << _shard.toString() << " -> " << to.toString() << endl;
@@ -320,7 +342,6 @@ namespace mongo {
         
         ScopedDbConnection fromconn( from);
 
-        BSONObj res;
         bool worked = fromconn->runCommand( "admin" ,
                                             BSON( "moveChunk" << _manager->getns() << 
                                                   "from" << from.getConnString() <<
@@ -339,9 +360,7 @@ namespace mongo {
             _manager->_reload();
             return true;
         }
-        
-        errmsg = res["errmsg"].String();
-        errmsg += " " + res.toString();
+
         return false;
     }
     
@@ -359,18 +378,7 @@ namespace mongo {
     bool Chunk::_splitIfShould( long dataWritten ){
         _dataWritten += dataWritten;
         
-        // split faster in early chunks helps spread out an initial load better
-        int splitThreshold;
-        const int minChunkSize = 1 << 20;  // 1 MBytes
-        int numChunks = getManager()->numChunks();
-        if ( numChunks < 10 ){
-            splitThreshold = max( MaxChunkSize / 4 , minChunkSize );
-        } else if ( numChunks < 20 ){
-            splitThreshold = max( MaxChunkSize / 2 , minChunkSize );
-        } else {
-            splitThreshold = max( MaxChunkSize , minChunkSize );
-        }
-        
+        int splitThreshold = getManager()->getCurrentDesiredChunkSize();
         if ( minIsInf() || maxIsInf() ){
             splitThreshold = (int) ((double)splitThreshold * .9);
         }
@@ -386,23 +394,38 @@ namespace mongo {
             if ( ! dlk.got() )
                 return false;
             
-            log(3) << "\t splitIfShould : " << *this << endl;
+            log(3) << "\t splitIfShould entering decision area : " << *this << endl;
             
-            _dataWritten = 0;
+            _dataWritten = 0; // reset so we check often enough
             
-            BSONObj splitPoint = pickSplitPoint();
+            // We limit the amount of objects we're willing to split away and don't bother
+            // getting all the split points. If we're in a jumbo chunk, that would prevent
+            // traversing the whole chunk.
+            const int maxPoints = 2; 
+            const int maxObjs = 100000;
+            vector<BSONObj> possibleSplitPoints;
+            pickSplitVector( possibleSplitPoints , splitThreshold , maxPoints , maxObjs );            
+            if ( possibleSplitPoints.size() <= 1 ) {
+                // no split points means there isn't enough data to split on
+                // 1 split point means we have between half the chunk size to full chunk size
+                // so we shouldn't split
+                return false;
+            }
+
+            BSONObj splitPoint = pickSplitPoint( &possibleSplitPoints );
             if ( splitPoint.isEmpty() || _min == splitPoint || _max == splitPoint) {
+                // TODO: this check might be redundany, but probably not that bad
                 error() << "want to split chunk, but can't find split point " 
                         << " chunk: " << toString() << " got: " << splitPoint << endl;
                 return false;
             }
             
-            long size = getPhysicalSize();
-            if ( size < splitThreshold )
-                return false;
-            
-            log() << "autosplitting " << _manager->getns() << " size: " << size << " shard: " << toString() 
-                  << " on: " << splitPoint << "(splitThreshold " << splitThreshold << ")" << endl;
+            log() << "autosplitting " << _manager->getns() << " shard: " << toString() 
+                  << " on: " << splitPoint << "(splitThreshold " << splitThreshold << ")" 
+#ifdef _DEBUG
+                  << " size: " << getPhysicalSize() // slow - but can be usefule when debugging
+#endif
+                  << endl;
             
             vector<BSONObj> splitPoints;
             splitPoints.push_back( splitPoint );
@@ -441,9 +464,10 @@ namespace mongo {
 
         log() << "moving chunk (auto): " << toMove->toString() << " to: " << newLocation.toString() << " #objects: " << toMove->countObjects() << endl;
 
-        string errmsg;
-        massert( 10412 ,  (string)"moveAndCommit failed: " + errmsg , 
-                 toMove->moveAndCommit( newLocation , errmsg ) );
+        BSONObj res;
+        massert( 10412 , 
+                 (string)"moveAndCommit failed: " + res.toString() , 
+                 toMove->moveAndCommit( newLocation , res ) );
         
         return true;
     }
@@ -1006,7 +1030,7 @@ namespace mongo {
 
         ChunkPtr soleChunk = _chunkMap.begin()->second;
         vector<BSONObj> splitPoints;
-        soleChunk->pickSplitVector( &splitPoints , Chunk::MaxChunkSize );
+        soleChunk->pickSplitVector( splitPoints , Chunk::MaxChunkSize );
         if ( splitPoints.empty() ){
             log(1) << "not enough data to warrant chunking " << getns() << endl;
             return;
@@ -1213,6 +1237,24 @@ namespace mongo {
             shared_ptr<ChunkRange> cr (new ChunkRange(first, begin));
             _ranges[cr->getMax()] = cr;
         }
+    }
+
+    int ChunkManager::getCurrentDesiredChunkSize() const {
+        // split faster in early chunks helps spread out an initial load better
+        const int minChunkSize = 1 << 20;  // 1 MBytes
+
+        int splitThreshold = Chunk::MaxChunkSize;
+        
+        int nc = numChunks();
+        
+        if ( nc < 10 ){
+            splitThreshold = max( splitThreshold / 4 , minChunkSize );
+        } 
+        else if ( nc < 20 ){
+            splitThreshold = max( splitThreshold / 2 , minChunkSize );
+        }
+        
+        return splitThreshold;
     }
     
     class ChunkObjUnitTest : public UnitTest {

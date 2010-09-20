@@ -26,7 +26,6 @@
 
 namespace mongo {
 
-    struct HostAndPort;
     const int SOCK_FAMILY_UNKNOWN_ERROR=13078;
     string getAddrInfoStrError(int code);
 
@@ -247,11 +246,9 @@ namespace mongo {
 
     string getHostNameCached();
 
-    const OID& getServerID();
-
     class ListeningSockets {
     public:
-        ListeningSockets() : _mutex("ListeningSockets"), _sockets( new set<int>() ), _ready(false) { }
+        ListeningSockets() : _mutex("ListeningSockets"), _sockets( new set<int>() ) { }
         void add( int sock ){
             scoped_lock lk( _mutex );
             _sockets->insert( sock );
@@ -273,20 +270,11 @@ namespace mongo {
                 closesocket( sock );
             }            
         }
-
-        void setReady() { _ready = true; }
-        bool isReady() { return _ready; }
-
         static ListeningSockets* get();
-
-        /* returns true if the host/port combo identifies this process instance. */
-        static bool listeningOn(const HostAndPort& addr);
     private:
         mongo::mutex _mutex;
         set<int>* _sockets;
         static ListeningSockets* _instance;
-
-        volatile bool _ready;
     };
 
 } // namespace mongo

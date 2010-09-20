@@ -29,6 +29,7 @@ createMongoArgs = function( binaryName , args ){
     if ( args.length == 1 && isObject( args[0] ) ){
         var o = args[0];
         for ( var k in o ){
+          if ( o.hasOwnProperty(k) ){
             if ( k == "v" && isNumber( o[k] ) ){
                 var n = o[k];
                 if ( n > 0 ){
@@ -43,6 +44,7 @@ createMongoArgs = function( binaryName , args ){
                 if ( o[k] != "" )
                     fullArgs.push( "" + o[k] );
             }
+          }
         }
     }
     else {
@@ -576,6 +578,20 @@ ShardingTest.prototype.chunkCounts = function( collName , dbName ){
     );
     return x;
 
+}
+
+ShardingTest.prototype.chunkDiff = function( collName , dbName ){
+    var c = this.chunkCounts( collName , dbName );
+    var min = 100000000;
+    var max = 0;
+    for ( var s in c ){
+        if ( c[s] < min )
+            min = c[s];
+        if ( c[s] > max )
+            max = c[s];
+    }
+    print( "input: " + tojson( c ) + " min: " + min + " max: " + max  );
+    return max - min;
 }
 
 ShardingTest.prototype.shardGo = function( collName , key , split , move , dbName ){

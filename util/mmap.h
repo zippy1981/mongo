@@ -63,17 +63,13 @@ namespace mongo {
         static void lockAll();
         static void unlockAll();
 
-        /* can be "overriden" if necessary */
-        static bool exists(boost::filesystem::path p) {
-            return boost::filesystem::exists(p);
-        }
+        static bool exists(boost::filesystem::path p) { return boost::filesystem::exists(p); }
     };
 
 #ifndef _DEBUG
     // no-ops in production
     inline void MongoFile::lockAll() {}
     inline void MongoFile::unlockAll() {}
-
 #endif
 
     struct MongoFileAllowWrites {
@@ -123,7 +119,7 @@ namespace mongo {
         void commit();
         
         Pointer open(const char *filename);
-        Pointer open(const char *_filename, long &length, int options=0);
+        Pointer open(const char *_filename, long &length, /*MongoFile::Options*/ int options=0);
     };
 
     class MemoryMappedFile : public MongoFile {
@@ -145,7 +141,10 @@ namespace mongo {
             close();
         }
         void close();
-        
+
+        void* testGetCopyOnWriteView();
+        void  testCloseCopyOnWriteView(void *);
+
         // Throws exception if file doesn't exist. (dm may2010: not sure if this is always true?)
         void* map(const char *filename);
         void* mapWithOptions(const char *filename, int options);
@@ -160,6 +159,7 @@ namespace mongo {
 
         /* Creates with length if DNE, otherwise uses existing file length,
            passed length.
+           @param options MongoFile::Options bits
         */
         void* map(const char *filename, unsigned long long &length, int options = 0 );
 

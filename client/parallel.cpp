@@ -151,12 +151,11 @@ namespace mongo {
         BSONObjBuilder b;
         b.append( "clusteredType" , type() );
 
-        long long nscanned = 0;
-        long long nscannedObjects = 0;
-        long long n = 0;
         long long millis = 0;
         double numExplains = 0;
-        
+
+        map<string,long long> counters;
+
         map<string,list<BSONObj> > out;
         {
             _explain( out );
@@ -169,10 +168,16 @@ namespace mongo {
                 for ( list<BSONObj>::iterator j=l.begin(); j!=l.end(); ++j ){
                     BSONObj temp = *j;
                     y.append( temp );
-
-                    nscanned += temp["nscanned"].numberLong();
-                    nscannedObjects += temp["nscannedObjects"].numberLong();
-                    n += temp["n"].numberLong();
+                    
+                    BSONObjIterator k( temp );
+                    while ( k.more() ){
+                        BSONElement z = k.next();
+                        if ( z.fieldName()[0] != 'n' )
+                            continue;
+                        long long& c = counters[z.fieldName()];
+                        c += z.numberLong();
+                    }
+                    
                     millis += temp["millis"].numberLong();
                     numExplains++;
                 }
@@ -181,9 +186,9 @@ namespace mongo {
             x.done();
         }
 
-        b.appendNumber( "nscanned" , nscanned );
-        b.appendNumber( "nscannedObjects" , nscannedObjects );
-        b.appendNumber( "n" , n );
+        for ( map<string,long long>::iterator i=counters.begin(); i!=counters.end(); ++i )
+            b.appendNumber( i->first , i->second );
+
         b.appendNumber( "millisTotal" , millis );
         b.append( "millisAvg" , (int)((double)millis / numExplains ) );
         b.append( "numQueries" , (int)numExplains );
@@ -461,29 +466,30 @@ namespace mongo {
     }
 
     bool Future::CommandResult::join(){
-        if (_done)
-            return _ok;
-
-        _barrier.take();
-        _barrier.put(true); // so others can take again
-
-        assert(_done);
-
+        _thr->join();
+        assert( _done );
         return _ok;
     }
 
     void Future::commandThread(shared_ptr<CommandResult> res){
-        ScopedDbConnection conn( res->_server );
-        res->_ok = conn->runCommand( res->_db , res->_cmd , res->_res );
+        setThreadName( "future" );
+        
+        try {
+            ScopedDbConnection conn( res->_server );
+            res->_ok = conn->runCommand( res->_db , res->_cmd , res->_res );
+            conn.done();
+        }
+        catch ( std::exception& e ){
+            error() << "Future::commandThread exception: " << e.what() << endl;
+            res->_ok = false;
+        }
         res->_done = true;
-        res->_barrier.put(true);
-        conn.done();
     }
 
     shared_ptr<Future::CommandResult> Future::spawnCommand( const string& server , const string& db , const BSONObj& cmd ){
         shared_ptr<Future::CommandResult> res (new Future::CommandResult( server , db , cmd ));
-        boost::thread thr( boost::bind(Future::commandThread, res) );
-
+        res->_thr.reset( new boost::thread( boost::bind(Future::commandThread, res) ) );
+        
         return res;
     }
     

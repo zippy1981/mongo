@@ -575,8 +575,12 @@ namespace mongo {
                     return false;
                 }
                 
-                if ( ! c->moveAndCommit( to , errmsg ) )
+                BSONObj res;
+                if ( ! c->moveAndCommit( to , res ) ){
+                    errmsg = "move failed";
+                    result.append( "cause" , res );
                     return false;
+                }
 
                 result.append( "millis" , t.millis() );
                 return true;
@@ -910,6 +914,7 @@ namespace mongo {
 
                 // hit each shard
                 vector<string> errors;
+                vector<BSONObj> errorObjects;
                 for ( set<string>::iterator i = shards->begin(); i != shards->end(); i++ ){
                     string theShard = *i;
                     bbb.append( theShard );
@@ -918,8 +923,10 @@ namespace mongo {
                     bool ok = conn->runCommand( dbName , cmdObj , res );
                     addWriteBack( writebacks, res );
                     string temp = DBClientWithCommands::getLastErrorString( res );
-                    if ( ok == false || temp.size() )
+                    if ( ok == false || temp.size() ){
                         errors.push_back( temp );
+                        errorObjects.push_back( res );
+                    }
                     n += res["n"].numberLong();
                     conn.done();
                 }
@@ -948,11 +955,21 @@ namespace mongo {
                 
                 result.append( "err" , errors[0].c_str() );
                 
-                BSONObjBuilder all;
-                for ( unsigned i=0; i<errors.size(); i++ ){
-                    all.append( all.numStr( i ) , errors[i].c_str() );
+                { // errs
+                    BSONArrayBuilder all( result.subarrayStart( "errs" ) );
+                    for ( unsigned i=0; i<errors.size(); i++ ){
+                        all.append( errors[i].c_str() );
+                    }
+                    all.done();
                 }
-                result.appendArray( "errs" , all.obj() );
+
+                { // errObjects
+                    BSONArrayBuilder all( result.subarrayStart( "errObjects" ) );
+                    for ( unsigned i=0; i<errorObjects.size(); i++ ){
+                        all.append( errorObjects[i] );
+                    }
+                    all.done();
+                }
                 handleWriteBacks( writebacks );
                 return true;
             }

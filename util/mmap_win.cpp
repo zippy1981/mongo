@@ -46,6 +46,20 @@ namespace mongo {
     
     unsigned long long mapped = 0;
 
+    void MemoryMappedFile::testCloseCopyOnWriteView(void *p) { 
+        UnmapViewOfFile(p);
+    }
+
+    void* MemoryMappedFile::testGetCopyOnWriteView() { 
+        assert( maphandle );
+        void *p = MapViewOfFile(maphandle, FILE_MAP_COPY, /*f ofs hi*/0, /*f ofs lo*/ 0, /*dwNumberOfBytesToMap 0 means to eof*/0);
+        if ( p == 0 ) {
+            DWORD e = GetLastError();
+            log() << "FILE_MAP_COPY MapViewOfFile failed " << _filename << " " << errnoWithDescription(e) << endl;
+        }
+        return p;
+    }
+
     void* MemoryMappedFile::map(const char *filenameIn, unsigned long long &length, int options) {
         _filename = filenameIn;
         /* big hack here: Babble uses db names with colons.  doesn't seem to work on windows.  temporary perhaps. */
@@ -70,8 +84,8 @@ namespace mongo {
         if ( options & SEQUENTIAL )
             createOptions |= FILE_FLAG_SEQUENTIAL_SCAN;
         DWORD rw = GENERIC_READ | GENERIC_WRITE;
-        if ( options & READONLY ) 
-            rw = GENERIC_READ;
+        //if ( options & READONLY ) 
+        //    rw = GENERIC_READ;
 
         fd = CreateFile(
                  toNativeString(filename).c_str(),
@@ -80,7 +94,7 @@ namespace mongo {
                  NULL, // security
                  OPEN_ALWAYS, // create disposition
                  createOptions , // flags
-                 NULL); // hTemplateFile
+                 NULL); // hTempl
         if ( fd == INVALID_HANDLE_VALUE ) {
             log() << "Create/OpenFile failed " << filename << ' ' << GetLastError() << endl;
             return 0;
@@ -88,16 +102,24 @@ namespace mongo {
 
         mapped += length;
 
-        maphandle = CreateFileMapping(fd, NULL, PAGE_READWRITE, length >> 32, (unsigned) length, NULL);
+        DWORD flProtect = PAGE_READWRITE; //(options & READONLY)?PAGE_READONLY:PAGE_READWRITE;
+        maphandle = CreateFileMapping(fd, NULL, flProtect, 
+            length >> 32 /*maxsizehigh*/, 
+            (unsigned) length /*maxsizelow*/, 
+            NULL/*lpName*/);
         if ( maphandle == NULL ) {
-            log() << "CreateFileMapping failed " << filename << ' ' << GetLastError() << endl;
+            DWORD e = GetLastError(); // log() call was killing lasterror before we get to that point in the stream
+            log() << "CreateFileMapping failed " << filename << ' ' << errnoWithDescription(e) << endl;
             return 0;
         }
 
-        view = MapViewOfFile(maphandle, FILE_MAP_ALL_ACCESS, 0, 0, 0);
+        {
+            DWORD access = (options&READONLY)? FILE_MAP_READ : FILE_MAP_ALL_ACCESS;
+            view = MapViewOfFile(maphandle, access, /*f ofs hi*/0, /*f ofs lo*/ 0, /*dwNumberOfBytesToMap 0 means to eof*/0);
+        }
         if ( view == 0 ) {
-            log() << "MapViewOfFile failed " << filename << " " << errnoWithDescription() << " " << 
-                GetLastError() << endl;
+            DWORD e = GetLastError();
+            log() << "MapViewOfFile failed " << filename << " " << errnoWithDescription(e) << endl;
         }
         len = length;
         return view;

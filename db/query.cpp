@@ -552,7 +552,7 @@ namespace mongo {
             b << "cursor" << c->toString() << "indexBounds" << c->prettyIndexBounds();
             b.done();
         }
-        void noteScan( Cursor *c, long long nscanned, long long nscannedObjects, int n, bool scanAndOrder, int millis, bool hint ) {
+        void noteScan( Cursor *c, long long nscanned, long long nscannedObjects, int n, bool scanAndOrder, int millis, bool hint, int nYields , int nChunkSkips ) {
             if ( _i == 1 ) {
                 _c.reset( new BSONArrayBuilder() );
                 *_c << _b->obj();
@@ -571,6 +571,9 @@ namespace mongo {
                 *_b << "scanAndOrder" << true;
 
             *_b << "millis" << millis;
+            
+            *_b << "nYields" << nYields;
+            *_b << "nChunkSkips" << nChunkSkips;
 
             *_b << "indexBounds" << c->prettyIndexBounds();
 
@@ -616,6 +619,8 @@ namespace mongo {
             _nscanned(0), _oldNscanned(0), _nscannedObjects(0), _oldNscannedObjects(0),
             _n(0),
             _oldN(0),
+            _nYields(),
+            _nChunkSkips(),
             _chunkMatcher(shardingState.getChunkMatcher(pq.ns())),
             _inMemSort(false),
             _saveClientCursor(false),
@@ -660,6 +665,7 @@ namespace mongo {
         }
         
         virtual void recoverFromYield() {
+            ++_nYields;
             if ( _findingStartCursor.get() ) {
                 _findingStartCursor->recoverFromYield();
             } else {
@@ -718,6 +724,7 @@ namespace mongo {
                 _nscannedObjects++;
                 DiskLoc cl = _c->currLoc();
                 if ( _chunkMatcher && ! _chunkMatcher->belongsToMe( _c->currKey(), _c->currLoc() ) ){
+                    _nChunkSkips++;
                     // cout << "TEMP skipping un-owned chunk: " << _c->current() << endl;
                 }
                 else if( _c->getsetdup(cl) ) { 
@@ -808,7 +815,7 @@ namespace mongo {
                 _saveClientCursor = true;
 
             if ( _pq.isExplain()) {
-                _eb.noteScan( _c.get(), _nscanned, _nscannedObjects, _n, scanAndOrderRequired(), _curop.elapsedMillis(), useHints && !_pq.getHint().eoo() );
+                _eb.noteScan( _c.get(), _nscanned, _nscannedObjects, _n, scanAndOrderRequired(), _curop.elapsedMillis(), useHints && !_pq.getHint().eoo(), _nYields , _nChunkSkips);
             } else {
                 _response.appendData( _buf.buf(), _buf.len() );
                 _buf.decouple();
@@ -870,6 +877,9 @@ namespace mongo {
         long long _oldNscannedObjects;
         int _n; // found so far
         int _oldN;
+        
+        int _nYields;
+        int _nChunkSkips;
         
         MatchDetails _details;
 
