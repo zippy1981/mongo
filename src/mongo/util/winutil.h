@@ -26,7 +26,7 @@
 
 namespace mongo {
 
-    inline string GetWinErrMsg(DWORD err) {
+	inline string GetWinErrMsg(DWORD err) {
         LPTSTR errMsg;
         ::FormatMessage( FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM, NULL, err, 0, (LPTSTR)&errMsg, 0, NULL );
         std::string errMsgStr = toUtf8String( errMsg );
@@ -38,6 +38,8 @@ namespace mongo {
 
         return output.str();
     }
+
+	inline string GetLsaErrMsg(DWORD err) { return GetWinErrMsg(LsaNtStatusToWinError(err)); }
 }
 
 #endif

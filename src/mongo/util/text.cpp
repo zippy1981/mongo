@@ -101,6 +101,26 @@ namespace mongo {
         buf << s;
         return buf.str();
     }
+
+	LSA_UNICODE_STRING toLsaUnicodeString (const std::wstring& str) {
+		LSA_UNICODE_STRING lsaWStr;
+		DWORD len = 0;
+
+		len = str.length(); 
+		LPWSTR cstr = new WCHAR[len + 1];
+		memcpy(cstr, str.c_str(), (len + 1) * sizeof(WCHAR));
+		lsaWStr.Buffer = cstr;
+		lsaWStr.Length = (USHORT)((len) * sizeof(WCHAR));
+		lsaWStr.MaximumLength = (USHORT)((len + 1) * sizeof(WCHAR));
+		return lsaWStr;
+	}
+
+	void freeLsaUnicodeString(LSA_UNICODE_STRING& str) {
+		delete [] str.Buffer;
+		str.Buffer = 0;
+		str.Length = 0;
+		str.MaximumLength = 0;
+	}
 #endif
 
 #endif

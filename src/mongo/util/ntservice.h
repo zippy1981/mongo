@@ -21,6 +21,19 @@
 #include <windows.h>
 #include "boost/program_options.hpp"
 
+#ifndef STATUS_SUCCESS
+#define STATUS_SUCCESS  ((NTSTATUS)0x00000000L)
+#endif
+#ifndef LSA_LOOKUP_ISOLATED_AS_LOCAL
+#define LSA_LOOKUP_ISOLATED_AS_LOCAL 0x80000000
+#endif
+#ifndef STATUS_SOME_NOT_MAPPED
+#define STATUS_SOME_NOT_MAPPED 0x00000107
+#endif
+#ifndef STATUS_NONE_MAPPED
+#define STATUS_NONE_MAPPED 0xC0000073
+#endif
+
 namespace mongo {
 
     typedef bool ( *ServiceCallback )( void );

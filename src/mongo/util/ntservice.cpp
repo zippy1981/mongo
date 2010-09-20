@@ -36,6 +36,39 @@ namespace mongo {
 
     bool initService();
 
+	NTSTATUS createLsaHandle(PLSA_HANDLE pHandle) {
+		LSA_OBJECT_ATTRIBUTES attributes;
+		ACCESS_MASK necessaryAccess = POLICY_LOOKUP_NAMES | POLICY_CREATE_ACCOUNT;
+		//ACCESS_MASK necessaryAccess = POLICY_ALL_ACCESS; //TODO: Apply minimal necessary access
+
+		ZeroMemory(&attributes, sizeof(attributes));
+		return LsaOpenPolicy(NULL, &attributes, necessaryAccess, pHandle);
+	}
+
+	PLSA_TRANSLATED_SID2 getSidByUserName (PLSA_HANDLE pHandle, std::wstring userName) {
+		NTSTATUS ntStatus;
+		LSA_UNICODE_STRING lsaName;
+		PLSA_REFERENCED_DOMAIN_LIST referencedDomain;
+		PLSA_TRANSLATED_SID2 translatedSid;
+
+		lsaName = toLsaUnicodeString(userName);
+		ntStatus = LsaLookupNames2(*pHandle, LSA_LOOKUP_ISOLATED_AS_LOCAL, 1, &lsaName, &referencedDomain, &translatedSid);
+	
+		if (ntStatus == ERROR_SUCCESS || ntStatus == STATUS_NONE_MAPPED || ntStatus == STATUS_SOME_NOT_MAPPED) {
+			LsaFreeMemory(referencedDomain);
+			if (ntStatus != ERROR_SUCCESS) {
+				LsaFreeMemory(translatedSid);
+				translatedSid = NULL;
+			}
+		}
+		else { translatedSid = NULL; }
+		if (ntStatus != ERROR_SUCCESS) {
+			cerr << "Cannot get a sid for user " << toUtf8String(lsaName.Buffer) << ": " << GetLsaErrMsg(ntStatus) << endl;
+		}
+		freeLsaUnicodeString(lsaName);
+		return translatedSid;
+	}
+
     // returns true if the service is started.
     bool serviceParamsCheck( boost::program_options::variables_map& params, const std::string dbpath, int argc, char* argv[] ) {
         bool installService = false;
@@ -233,11 +266,41 @@ namespace mongo {
                 actualServiceUser = serviceUser;
             }
 
-            cerr << "Setting service login credentials. User: " << toUtf8String(actualServiceUser) << endl;
-            serviceInstalled = ::ChangeServiceConfig( schService, SERVICE_NO_CHANGE, SERVICE_NO_CHANGE, SERVICE_NO_CHANGE, NULL, NULL, NULL, NULL, actualServiceUser.c_str(), servicePassword.c_str(), NULL );
-            if ( !serviceInstalled ) {
-                cerr << "Setting service login failed. Service has 'LocalService' permissions." << endl;
-            }
+			NTSTATUS ntStatus;
+			LSA_HANDLE lsaHandle;
+			PLSA_TRANSLATED_SID2 translatedSid;
+
+			ntStatus = createLsaHandle(&lsaHandle);
+			if (ntStatus == STATUS_SUCCESS) {
+				translatedSid = getSidByUserName(&lsaHandle, serviceUser);
+				if (translatedSid != NULL) {
+					LSA_UNICODE_STRING strLoginAsService = toLsaUnicodeString(L"SeServiceLogonRight");
+					ntStatus = LsaAddAccountRights
+						(lsaHandle, translatedSid->Sid, &strLoginAsService, 1);
+					freeLsaUnicodeString(strLoginAsService);
+					if (ntStatus != STATUS_SUCCESS) {
+						cerr << "Error adding Log on a service right to user " << toUtf8String(actualServiceUser) << ": " << GetLsaErrMsg(ntStatus) << endl;
+						serviceInstalled = false;
+					}
+					LsaFreeMemory(translatedSid);			
+				}
+
+				ntStatus = LsaClose(lsaHandle);
+				if(ntStatus != STATUS_SUCCESS) {
+					cerr << "Error closing the Local security policy handle: " << GetLsaErrMsg(ntStatus) << endl;
+				}
+				
+				cerr << "Setting service login credentials. User: " << toUtf8String(actualServiceUser) << endl;
+				serviceInstalled = ::ChangeServiceConfig( schService, SERVICE_NO_CHANGE, SERVICE_NO_CHANGE, SERVICE_NO_CHANGE, NULL, NULL, NULL, NULL, actualServiceUser.c_str(), servicePassword.c_str(), NULL );
+				
+			}
+			else {
+				serviceInstalled = false;
+				cerr << "Error opening Local Security Policy Handle: " << GetLsaErrMsg(ntStatus) << endl;
+			}
+			if ( !serviceInstalled ) {
+				cerr << "Setting service login failed. Service has 'LocalService' permissions." << endl;
+			}
         }
 
         // set the service description

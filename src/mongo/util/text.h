@@ -32,6 +32,10 @@
 
 #pragma once
 
+#if defined(_WIN32)
+#include <Ntsecapi.h>
+#endif
+
 namespace mongo {
 
     class StringSplitter {
@@ -108,6 +112,10 @@ namespace mongo {
     std::string toUtf8String(const std::wstring& wide);
 
     std::wstring toWideString(const char *s);
+
+    LSA_UNICODE_STRING toLsaUnicodeString (const std::wstring& str);
+
+	void freeLsaUnicodeString(LSA_UNICODE_STRING& str);
 
     /* like toWideString but UNICODE macro sensitive */
 # if !defined(_UNICODE)
