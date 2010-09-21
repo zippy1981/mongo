@@ -551,17 +551,17 @@ namespace mongo {
             
             { // 3.c
                 
-                ScopedDbConnection conn( to );
+                ScopedDbConnection connTo( to );
                 BSONObj res;
-                bool ok = conn->runCommand( "admin" , 
-                                            BSON( "_recvChunkStart" << ns <<
-                                                  "from" << from <<
-                                                  "min" << min <<
-                                                  "max" << max <<
-                                                  "configServer" << configServer.modelServer()
+                bool ok = connTo->runCommand( "admin" , 
+                                              BSON( "_recvChunkStart" << ns <<
+                                                    "from" << from <<
+                                                    "min" << min <<
+                                                    "max" << max <<
+                                                    "configServer" << configServer.modelServer()
                                                   ) , 
-                                            res );
-                conn.done();
+                                              res );
+                connTo.done();
 
                 if ( ! ok ){
                     errmsg = "_recvChunkStart failed: ";
@@ -633,11 +633,11 @@ namespace mongo {
                 // 5.b
                 {
                     BSONObj res;
-                    ScopedDbConnection conn( to );
-                    bool ok = conn->runCommand( "admin" , 
-                                                BSON( "_recvChunkCommit" << 1 ) ,
-                                                res );
-                    conn.done();
+                    ScopedDbConnection connTo( to );
+                    bool ok = connTo->runCommand( "admin" , 
+                                                  BSON( "_recvChunkCommit" << 1 ) ,
+                                                  res );
+                    connTo.done();
                     log() << "moveChunk commit result: " << res << endl;
                     if ( ! ok ){
                         log() << "_recvChunkCommit failed: " << res << endl;
@@ -668,9 +668,10 @@ namespace mongo {
                         
                         shardingState.setVersion( ns , myVersion );
 
-                        conn->update( ShardNS::chunk , x["_id"].wrap() , BSON( "$set" << temp2.obj() ) );
+                        BSONObj chunkIDDoc = x["_id"].wrap();
+                        conn->update( ShardNS::chunk , chunkIDDoc , BSON( "$set" << temp2.obj() ) );
                         
-                        log() << "moveChunk updating self to: " << myVersion << endl;
+                        log() << "moveChunk updating self to: " << myVersion << " through " << chunkIDDoc << endl;
                     }
                     else {
                         log() << "moveChunk: i have no chunks left" << endl;
