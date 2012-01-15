@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+	<Product Id="829f31da-c616-4cd2-8acf-9c9bf0fe1c44" Name="MongoDB" Language="1033" Version="1.0.0.0" Manufacturer="MongoSetup" UpgradeCode="59a0de48-93a6-4ffc-930b-c7bff86394c7">
+		<Package InstallerVersion="200" Compressed="yes" />
+
+		<Media Id="1" Cabinet="mongo.cab" EmbedCab="yes" />
+
+		<Directory Id="TARGETDIR" Name="SourceDir">
+			<Directory Id="ProgramFilesFolder">
+				<Directory Id="INSTALLLOCATION" Name="Mongo">
+          <Component Id="Mongod" Guid="2dd3b9ce-24ab-485e-ac64-bd1f67859dd3">
+            <File Id="mongod"  Name="mongod.exe" Source="..\..\mongod.exe" />
+          </Component>
+          <Component Id="Mongos" Guid="6cc64186-5132-4613-9fe6-7be461bbca96">
+            <File Id="mongos"  Name="mongos.exe" Source="..\..\mongos.exe" />
+          </Component>
+          <Component Id="MongoBridge" Guid="6eb6d903-2797-4dde-b482-cfdbd8601d5d">
+            <File Id="mongobridge"  Name="mongobridge.exe" Source="..\..\mongobridge.exe" />
+          </Component>
+          <!-- BEGIN client components -->
+          <Component Id="MongoClient" Guid="904baa0c-1e9d-471a-b806-c07b1301f83c">
+            <File Id="mongo"  Name="mongo.exe" Source="..\..\mongo.exe" />
+          </Component>
+          <Component Id="MongoImport" Guid="5dc7c572-aa5f-456b-a5dc-364d385b0b01">
+            <File Id="mongoimport"  Name="mongoimport.exe" Source="..\..\mongoimport.exe" />
+          </Component>
+          <Component Id="MongoExport" Guid="ff25c1c9-66b2-421e-b1b1-8768a2a3924c">
+            <File Id="mongoexport"  Name="mongoexport.exe" Source="..\..\mongoexport.exe" />
+          </Component>
+          <Component Id="MongoFiles" Guid="8f36041f-6836-4f22-8097-0e2e16db5504">
+            <File Id="mongofiles"  Name="mongofiles.exe" Source="..\..\mongofiles.exe" />
+          </Component>
+          <Component Id="MongoTop" Guid="14f1d4df-da21-452b-bd61-5761cba6564f">
+            <File Id="mongotop"  Name="mongotop.exe" Source="..\..\mongotop.exe" />
+          </Component>
+          <Component Id="MongoOplog" Guid="af84d9b8-3c54-4e50-b651-dc957b9fc264">
+            <File Id="mongooplog"  Name="mongooplog.exe" Source="..\..\mongooplog.exe" />
+          </Component>
+          <Component Id="MongoDump" Guid="8fdfd638-6ff5-43bc-8fe7-71323a2b2441">
+            <File Id="mongodump"  Name="mongodump.exe" Source="..\..\mongodump.exe" />
+          </Component>
+          <Component Id="MongoRestore" Guid="f7803e96-1f80-4fb1-a9b6-19a35b07c329">
+            <File Id="mongorestore"  Name="mongorestore.exe" Source="..\..\mongorestore.exe" />
+          </Component>
+          <Component Id="BsonDump" Guid="36edbf52-a626-4927-860e-fc00c8fdb5a3">
+            <File Id="bsondump"  Name="bsondump.exe" Source="..\..\bsondump.exe" />
+          </Component>
+          <Component Id="MongoPerf" Guid="73600126-7771-4606-8f24-68599acc1013">
+            <File Id="mongoperf"  Name="mongoperf.exe" Source="..\..\mongoperf.exe" />
+          </Component>
+          <Component Id="MongoStat" Guid="6e05375e-6bd3-4188-b8f3-a25c288ef02b">
+            <File Id="mongostat"  Name="mongostat.exe" Source="..\..\mongostat.exe" />
+          </Component>
+          <!-- END client components -->
+        </Directory>
+      </Directory>
+		</Directory>
+
+    <Feature Id="Mongod" Title="Mongod Server" Level="1">
+      <!-- TODO: Remove the comments around this ComponentRef element and the Component above in order to add resources to this installer. -->
+      <ComponentRef Id="Mongod" />
+      <ComponentGroupRef Id="Product.Generated" />
+    </Feature>
+    <Feature Id="MongoBridge" Title="Mongod Shard Server" Level="1">
+      <!-- TODO: Remove the comments around this ComponentRef element and the Component above in order to add resources to this installer. -->
+      <ComponentRef Id="MongoBridge" />
+      <ComponentGroupRef Id="Product.Generated" />
+    </Feature>
+    <Feature Id="Mongos" Title="Mongod Shard Server" Level="1">
+      <!-- TODO: Remove the comments around this ComponentRef element and the Component above in order to add resources to this installer. -->
+      <ComponentRef Id="Mongos" />
+      <ComponentGroupRef Id="Product.Generated" />
+    </Feature>
+    <Feature Id="MongoClient" Title="Mongo Client Utilities" Level="1">
+      <!-- TODO: Remove the comments around this ComponentRef element and the Component above in order to add resources to this installer. -->
+      <ComponentRef Id="MongoClient" />
+      <ComponentRef Id="MongoImport" />
+      <ComponentRef Id="MongoExport" />
+      <ComponentRef Id="MongoFiles" />
+      <ComponentRef Id="MongoTop" />
+      <ComponentRef Id="MongoOplog" />
+      <ComponentRef Id="MongoDump" />
+      <ComponentRef Id="MongoRestore" />
+      <ComponentRef Id="BsonDump" />
+      <ComponentRef Id="MongoPerf" />
+      <ComponentRef Id="MongoStat" />
+      <ComponentGroupRef Id="Product.Generated" />
+    </Feature>
+	</Product>
+</Wix>

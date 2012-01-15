@@ -119,6 +119,10 @@ debian/mongodb
 # This was inserted 2009-08-16, nobody knows why.
 #debian/mongodb.*
 
+#win32
+win32/MongoSetup/bin
+win32/MongoSetup/obj
+
 #osx
 .DS_Store
 
