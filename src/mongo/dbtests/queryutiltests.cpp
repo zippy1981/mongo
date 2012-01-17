@@ -248,7 +248,14 @@ namespace QueryUtilTests {
             }
         };
 
-        class QueryPatternTest {
+        class QueryPatternBase {
+        protected:
+            static QueryPattern p( const BSONObj &query, const BSONObj &sort = BSONObj() ) {
+                return FieldRangeSet( "", query, true ).pattern( sort );
+            }
+        };
+
+        class QueryPatternTest : public QueryPatternBase {
         public:
             void run() {
                 ASSERT( p( BSON( "a" << 1 ) ) == p( BSON( "a" << 1 ) ) );
@@ -268,9 +275,22 @@ namespace QueryUtilTests {
                 ASSERT( p( BSON( "a" << 1 ), BSON( "b" << 1 << "c" << 1 ) ) != p( BSON( "a" << 4 ), BSON( "b" << 1 ) ) );
                 ASSERT( p( BSON( "a" << 1 ), BSON( "b" << 1 ) ) != p( BSON( "a" << 4 ), BSON( "b" << 1 << "c" << 1 ) ) );
             }
-        private:
-            static QueryPattern p( const BSONObj &query, const BSONObj &sort = BSONObj() ) {
-                return FieldRangeSet( "", query, true ).pattern( sort );
+        };
+
+        class QueryPatternEmpty : public QueryPatternBase {
+        public:
+            void run() {
+                ASSERT( p( BSON( "a" << GT << 5 << LT << 7 ) ) !=
+                       p( BSON( "a" << GT << 7 << LT << 5 ) ) );
+            }
+        };
+
+        class QueryPatternNeConstraint : public QueryPatternBase {
+        public:
+            void run() {
+                ASSERT( p( BSON( "a" << NE << 5 ) ) != p( BSON( "a" << GT << 1 ) ) );
+                ASSERT( p( BSON( "a" << NE << 5 ) ) != p( BSONObj() ) );
+                ASSERT( p( BSON( "a" << NE << 5 ) ) == p( BSON( "a" << NE << "a" ) ) );
             }
         };
 
@@ -913,6 +933,8 @@ namespace QueryUtilTests {
             add< FieldRangeTests::Equality >();
             add< FieldRangeTests::SimplifiedQuery >();
             add< FieldRangeTests::QueryPatternTest >();
+            add< FieldRangeTests::QueryPatternEmpty >();
+            add< FieldRangeTests::QueryPatternNeConstraint >();
             add< FieldRangeTests::NoWhere >();
             add< FieldRangeTests::Numeric >();
             add< FieldRangeTests::InLowerBound >();
